@@ -80,10 +80,11 @@ export default async function StandingsPage() {
         )}
 
         <p className="text-faint mt-8 max-w-prose text-xs leading-relaxed">
-          A bye is worth a full point but counts as a game against an opponent with
-          no score, so it never inflates either tiebreak. Players who join
-          mid-season enter on zero and are ranked on the same basis as everyone
-          else — compare scores alongside games played.
+          Score is game points: a matchup of three games ending 2&ndash;1 is worth
+          two. A bye is worth a whole matchup, so sitting out costs nothing
+          against the players who won theirs. Byes and forfeits are never played,
+          so they count towards neither tiebreak nor games played. Players who
+          join mid-season enter on zero — compare scores alongside games played.
         </p>
       </main>
     </>

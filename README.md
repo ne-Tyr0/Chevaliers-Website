@@ -99,27 +99,47 @@ If you cannot remember who had which colour, pick either way round. It only
 nudges colour balance in later rounds; scores and rematch avoidance are
 unaffected.
 
-### 4. Deploying, when you are ready
+### 4. Deploying to Vercel
 
-1. Create an empty GitHub repo — no README or `.gitignore`, since this directory
-   already has commits — then:
+1. Push the repo if you have not already:
 
 ```bash
-git remote add origin https://github.com/<your-username>/<repo-name>.git
-git push -u origin main
+git push origin main
 ```
 
-2. In Vercel, **Add New → Project**, and import the repo. It detects Next.js.
-3. Add the four variables from [`.env.example`](.env.example) under **Environment
-   Variables**, for Production, Preview and Development.
-4. Deploy.
+2. In Vercel, **Add New → Project**, import `Chevaliers-Website`. It detects
+   Next.js; leave the build settings alone.
+3. Add these under **Environment Variables**, for Production, Preview and
+   Development:
 
-**Change `OFFICER_PASSCODE` before you deploy.** Once the site is public that
-passcode is the only thing between a passer-by and your results.
+| Variable | Where it comes from |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → Data API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API Keys |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API Keys |
+| `OFFICER_PASSCODE` | Choose one. Not the local one |
+| `ARBITER_PASSCODE` | Choose one, different again. Optional |
 
-**Decide what names go on the roster, too.** The standings page is public, so
-whatever officers type is visible to anyone with the link. If publishing
-students' full names is more than you want, use a first name and last initial.
+`NEXT_PUBLIC_SITE_URL` is optional — Vercel supplies its own production URL for
+link previews, so only set it once the club has its own domain.
+
+4. Deploy, then open the deployment and check the standings load.
+
+### Before you tell anyone the address
+
+- **Change both passcodes.** The ones in `.env.local` have been typed into a
+  chat and shared around while building; treat them as public. In Vercel the
+  passcodes are the only thing between a passer-by and your results.
+- **Decide about the roster names.** Everything on the standings and results
+  pages is visible to anyone with the link. If publishing students' full names
+  is more than the club wants, use a first name and last initial — the engine
+  does not care what the names are.
+- **The site is not indexed by search engines.** It is public to anyone with the
+  link, but `src/app/robots.ts` keeps it out of Google, so a member's name and
+  results do not surface when somebody searches for them. To change that, see
+  the comment in that file and the `robots` block in `src/app/layout.tsx`.
+- **Check the footer.** The club email and the "built by" line in
+  `src/components/site-footer.tsx` are shown to everyone.
 
 ## Everyday use
 
