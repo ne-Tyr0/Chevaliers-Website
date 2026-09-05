@@ -40,6 +40,7 @@ export default async function StandingsPage() {
   const participants = seasonParticipants(roster, history.matchupViews);
   const standings = computeStandings(toPlayerInputs(participants), history.matchups);
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
+  const gradeById = new Map(roster.map((p) => [p.id, p.grade]));
   const historyByPlayer = playerHistory(history.matchups);
   const gamesByPlayer = new Map(
     [...historyByPlayer].map(([id, entry]) => [id, entry.games]),
@@ -74,6 +75,7 @@ export default async function StandingsPage() {
             <StandingsTable
               rows={standings}
               nameById={nameById}
+              gradeById={gradeById}
               gamesByPlayer={gamesByPlayer}
             />
           </div>
@@ -85,6 +87,15 @@ export default async function StandingsPage() {
           against the players who won theirs. Byes and forfeits are never played,
           so they count towards neither tiebreak nor games played. Players who
           join mid-season enter on zero — compare scores alongside games played.
+        </p>
+
+        <p className="text-faint mt-4 max-w-prose text-xs leading-relaxed">
+          These standings count the rounds recorded on this site. The club played
+          earlier rounds of the Inaugural Games before the site existed, and those
+          survive only as totals on the printed sheets — a total cannot be turned
+          back into the games behind it, and both tiebreaks are built from
+          individual games, so entering one would produce figures that reconcile
+          with nothing. Those rounds stay on the club&rsquo;s own sheets.
         </p>
       </main>
     </>

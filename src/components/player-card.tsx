@@ -28,11 +28,13 @@ const RECENT_GAMES = 5;
  */
 export function PlayerCard({
   name,
+  grade,
   row,
   games,
   nameById,
 }: {
   name: string;
+  grade?: string | null;
   row: StandingRow;
   games: readonly GameRecord[];
   nameById: ReadonlyMap<string, string>;
@@ -45,6 +47,7 @@ export function PlayerCard({
     <div>
       <p className="font-display text-base font-semibold">{name}</p>
       <p className="text-faint mt-0.5 text-xs">
+        {grade ? `${grade} · ` : ""}
         {ordinal(row.rank)} · {formatPoints(row.score)}{" "}
         {row.score === 1 ? "point" : "points"} from {row.gamesPlayed}{" "}
         {row.gamesPlayed === 1 ? "game" : "games"}

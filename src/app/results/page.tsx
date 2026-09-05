@@ -94,6 +94,15 @@ export default async function ResultsPage() {
           hover a name for that player&rsquo;s record.
         </p>
 
+        <p className="text-faint mt-3 max-w-prose text-xs leading-relaxed">
+          Which player had White is recorded from the first round run on this
+          site onwards. Earlier games were played before anyone was noting it
+          down, so they show as &ldquo;colours not recorded&rdquo; rather than
+          being guessed at. Nothing else depends on it: scores, standings and
+          both tiebreaks are unaffected, and colour balancing simply starts from
+          the first round that has the information.
+        </p>
+
         {rounds.length === 0 ? (
           <Empty>
             No rounds have been paired yet. They appear here as soon as an officer

@@ -27,6 +27,8 @@ export type DbPairingResult =
 export type PlayerRow = {
   id: string;
   full_name: string;
+  /** Grade and section, e.g. "7-Diamond". Display only. */
+  grade: string | null;
   pairing_number: number | null;
   /** Reserved for linking this roster entry to a future login. Null today. */
   user_id: string | null;
@@ -80,6 +82,7 @@ export type Database = {
         Insert: {
           id?: string;
           full_name: string;
+          grade?: string | null;
           pairing_number?: number | null;
           user_id?: string | null;
           is_active?: boolean;
@@ -88,6 +91,7 @@ export type Database = {
         Update: {
           id?: string;
           full_name?: string;
+          grade?: string | null;
           pairing_number?: number | null;
           user_id?: string | null;
           is_active?: boolean;

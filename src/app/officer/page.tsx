@@ -456,6 +456,9 @@ async function RosterSection() {
             >
               <span className={player.is_active ? "text-sm" : "text-faint text-sm"}>
                 {player.full_name}
+                {player.grade ? (
+                  <span className="text-faint ml-2 text-xs">{player.grade}</span>
+                ) : null}
                 {!player.is_active ? (
                   <span className="text-faint ml-2 text-xs">retired</span>
                 ) : null}

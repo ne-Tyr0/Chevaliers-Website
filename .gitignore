@@ -45,3 +45,8 @@ next-env.d.ts
 
 # local verification recordings
 *.webm
+
+# Roster and result sheets carry students' real names, grades and sections.
+# The repo is public; these stay on the officer's machine. scripts/import-*.mjs
+# takes the sheet path as an argument, so nothing here needs to be committed.
+/scripts/*.txt

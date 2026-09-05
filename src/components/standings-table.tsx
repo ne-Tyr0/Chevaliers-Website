@@ -7,11 +7,14 @@ export { formatPoints };
 export function StandingsTable({
   rows,
   nameById,
+  gradeById,
   gamesByPlayer,
   highlightId,
 }: {
   rows: readonly StandingRow[];
   nameById: ReadonlyMap<string, string>;
+  /** Grade and section per player, as the club's pairing sheets identify them. */
+  gradeById?: ReadonlyMap<string, string | null>;
   /** Per-player history, used to fill the hover card. */
   gamesByPlayer: ReadonlyMap<string, GameRecord[]>;
   /** A row to tint, so a reader can find themselves. */
@@ -71,11 +74,17 @@ export function StandingsTable({
                 >
                   <PlayerCard
                     name={nameById.get(row.playerId) ?? "Unknown player"}
+                    grade={gradeById?.get(row.playerId) ?? null}
                     row={row}
                     games={gamesByPlayer.get(row.playerId) ?? []}
                     nameById={nameById}
                   />
                 </StatPopover>
+                {gradeById?.get(row.playerId) ? (
+                  <span className="text-faint ml-2 text-xs">
+                    {gradeById.get(row.playerId)}
+                  </span>
+                ) : null}
                 {row.byes > 0 ? (
                   <span className="text-faint ml-2 text-xs">
                     {row.byes === 1 ? "bye" : `${row.byes} byes`}
