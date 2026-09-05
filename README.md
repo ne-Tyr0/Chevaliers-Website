@@ -64,35 +64,48 @@ git push -u origin main
 
 ### 4. Google OAuth
 
-1. In [Google Cloud Console](https://console.cloud.google.com), create a project
-   (or pick an existing one) → **APIs & Services → OAuth consent screen**.
-   - **Internal** restricts sign-in to the school domain at Google's end, which
-     is the strongest of the three checks in this app. It is only offered when
-     the Cloud project sits inside the school's Google Workspace — that means
-     signing in to Cloud Console with your `@cvisc.pshs.edu.ph` account, not a
-     personal Gmail. If the option is greyed out, that is why.
-   - **External** works otherwise. Left in *Testing* mode it allows up to 100
-     users, and only accounts you add under **Audience → Test users** can sign
-     in — which for a school club doubles as a usable allowlist. You do not need
-     to publish or verify the app.
+You do **not** need the school's Google Workspace, and you do **not** need a
+billing account. Use any personal Gmail. Google pushes a "start free trial" /
+payment-and-tax prompt at several points — dismiss it every time. Creating an
+OAuth client is free and never asks for a card.
 
-   Either way the domain is still enforced twice more, in the app and in
-   Postgres, so an External app does not weaken who can actually get in.
-2. **Credentials → Create credentials → OAuth client ID → Web application**.
-3. Under **Authorised redirect URIs**, add the callback from your Supabase
-   project — it is shown in Supabase under **Authentication → Providers →
-   Google**, and looks like:
+Members still sign in with their `@cvisc.pshs.edu.ph` addresses. Google is only
+the identity provider; the school domain is enforced by this app and by Postgres.
+
+Google reorganised this area into **Google Auth Platform**, so older guides
+describing an "OAuth consent screen" page are out of date.
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) and sign in
+   with your personal Gmail.
+2. Top-left project selector → **New project**. Name it `chevaliers`, create it,
+   then make sure it is the selected project.
+3. Navigation menu → **Google Auth Platform** → **Get started**.
+   - **Branding**: app name (`Chevaliers Chess Club`) and your email as support
+     contact.
+   - **Audience**: choose **External**.
+   - **Contact information**: your email again.
+4. Still under **Audience**, leave the app in **Testing** and add every club
+   member's `@cvisc.pshs.edu.ph` address under **Test users** (100 max). In
+   Testing mode only these accounts can sign in, so this doubles as your
+   allowlist. No publishing or app verification is needed.
+5. **Clients** → **Create client** → Application type **Web application**.
+6. Under **Authorised redirect URIs**, add your Supabase callback. Find it in
+   Supabase under **Authentication → Providers → Google**; it looks like:
    `https://<project-ref>.supabase.co/auth/v1/callback`
-4. Copy the **Client ID** and **Client secret**.
-5. In Supabase, **Authentication → Providers → Google**: enable it, paste the ID
+7. Create, then copy the **Client ID** and **Client secret**.
+8. In Supabase, **Authentication → Providers → Google**: enable it, paste the ID
    and secret, save.
-6. In Supabase, **Authentication → URL Configuration**, add both of these under
+9. In Supabase, **Authentication → URL Configuration**, add both of these under
    **Redirect URLs**:
    - `http://localhost:3000/auth/callback`
    - `https://<your-vercel-domain>/auth/callback` — once you have deployed
 
-   Set **Site URL** to `http://localhost:3000` while you are working locally,
-   and change it to the Vercel URL when you deploy.
+   Set **Site URL** to `http://localhost:3000` while working locally, and change
+   it to the Vercel URL when you deploy.
+
+Every test user has to be added by hand, so if the club grows past a rough
+hundred, or you get tired of adding people, that is the point to revisit
+passwordless email sign-in instead.
 
 ### 5. Local environment
 
