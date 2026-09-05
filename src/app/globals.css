@@ -38,7 +38,10 @@
   /* A column so the footer can be pushed to the bottom of short pages rather
      than floating halfway up the window. Every page renders exactly one
      <main>, so letting that one element take up the slack is enough. */
+  /* Relative so the decorative pawns can be placed against the page rather
+     than the viewport, and hold their position as it scrolls. */
   body {
+    position: relative;
     display: flex;
     flex-direction: column;
     color: var(--color-ink);

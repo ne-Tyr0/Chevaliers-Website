@@ -10,14 +10,15 @@ import whitePawn from "../../design_assets/WhitePawn.png";
  * clear of the content column — below that the reading width is the whole
  * screen and a pawn behind the text would just be in the way.
  *
- * Fixed rather than absolute: they sit still while the standings scroll past,
- * which reads as a backdrop rather than as part of the page.
+ * Positioned on the page rather than in the viewport, so they hold their place
+ * as the page scrolls instead of following the reader down it. The offset puts
+ * them where they sit when the page is scrolled to the top.
  */
 export function PawnBackdrop() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none fixed inset-0 -z-10 hidden select-none items-center justify-between 2xl:flex"
+      className="pointer-events-none absolute inset-x-0 top-[50vh] -z-10 hidden -translate-y-1/2 select-none justify-between 2xl:flex"
     >
       <Image
         src={whitePawn}
