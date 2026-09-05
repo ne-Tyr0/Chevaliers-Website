@@ -8,7 +8,11 @@ Next.js (App Router) · TypeScript · Tailwind · Supabase · Vercel.
 ## Setup
 
 You need the Supabase project, GitHub repo, Vercel connection and Google OAuth
-credentials to exist before the app will run. In order:
+credentials to exist before the app will run.
+
+**To just get it running on your own machine, do steps 1, 4, 5 and 6 and skip 2
+and 3.** GitHub and Vercel only matter once you want the club to reach it, and
+nothing about them changes the local setup.
 
 ### 1. Supabase project
 
@@ -27,7 +31,7 @@ Finally, tell the database which email domain is allowed. Run this as a second
 query, replacing the domain with the school's:
 
 ```sql
-alter database postgres set app.allowed_email_domain = 'your-school.edu';
+alter database postgres set app.allowed_email_domain = 'cvisc.pshs.edu.ph';
 ```
 
 This is required — sign-in fails with a clear error until it is set. The app
@@ -58,10 +62,18 @@ git push -u origin main
 
 1. In [Google Cloud Console](https://console.cloud.google.com), create a project
    (or pick an existing one) → **APIs & Services → OAuth consent screen**.
-   - If the school has a Google Workspace, choose **Internal**. That restricts
-     sign-in to the school domain at Google's end, which is the strongest of the
-     three checks in this app.
-   - If not, choose **External** and add members as test users.
+   - **Internal** restricts sign-in to the school domain at Google's end, which
+     is the strongest of the three checks in this app. It is only offered when
+     the Cloud project sits inside the school's Google Workspace — that means
+     signing in to Cloud Console with your `@cvisc.pshs.edu.ph` account, not a
+     personal Gmail. If the option is greyed out, that is why.
+   - **External** works otherwise. Left in *Testing* mode it allows up to 100
+     users, and only accounts you add under **Audience → Test users** can sign
+     in — which for a school club doubles as a usable allowlist. You do not need
+     to publish or verify the app.
+
+   Either way the domain is still enforced twice more, in the app and in
+   Postgres, so an External app does not weaken who can actually get in.
 2. **Credentials → Create credentials → OAuth client ID → Web application**.
 3. Under **Authorised redirect URIs**, add the callback from your Supabase
    project — it is shown in Supabase under **Authentication → Providers →
@@ -70,23 +82,26 @@ git push -u origin main
 4. Copy the **Client ID** and **Client secret**.
 5. In Supabase, **Authentication → Providers → Google**: enable it, paste the ID
    and secret, save.
-6. In Supabase, **Authentication → URL Configuration**, set **Site URL** to your
-   Vercel production URL, and add these to **Redirect URLs**:
-   - `https://<your-vercel-domain>/auth/callback`
+6. In Supabase, **Authentication → URL Configuration**, add both of these under
+   **Redirect URLs**:
    - `http://localhost:3000/auth/callback`
+   - `https://<your-vercel-domain>/auth/callback` — once you have deployed
+
+   Set **Site URL** to `http://localhost:3000` while you are working locally,
+   and change it to the Vercel URL when you deploy.
 
 ### 5. Local environment
 
-```bash
-cp .env.example .env.local
-```
-
-Fill in the four values, then:
+`.env.local` already exists with the school domain filled in. Open it and paste
+the three Supabase values from step 1 into the blanks, then:
 
 ```bash
 npm install
 npm run dev
 ```
+
+The app refuses to start with a named error if any value is still blank, rather
+than failing later with something cryptic.
 
 ### 6. Make yourself an officer
 
