@@ -1,30 +1,26 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
+import { StandingsTable } from "@/components/standings-table";
 import {
   getActiveSeason,
   getRoster,
   getSeasonHistory,
-  getViewer,
   seasonParticipants,
   toPlayerInputs,
 } from "@/lib/club/queries";
-import { StandingsTable } from "@/components/standings-table";
+import { isOfficer } from "@/lib/officer/session";
 import { computeStandings } from "@/lib/swiss";
 
 export const metadata: Metadata = { title: "Standings" };
 
 export default async function StandingsPage() {
-  const viewer = await getViewer();
-  if (!viewer) redirect("/login");
-
-  const season = await getActiveSeason();
+  const [officer, season] = await Promise.all([isOfficer(), getActiveSeason()]);
 
   if (!season) {
     return (
       <>
-        <SiteHeader isOfficer={viewer.isOfficer} currentPath="/standings" />
+        <SiteHeader isOfficer={officer} currentPath="/standings" />
         <main className="mx-auto max-w-5xl px-6 py-20">
           <h1 className="text-4xl">Standings</h1>
           <EmptyState>
@@ -43,12 +39,12 @@ export default async function StandingsPage() {
 
   const participants = seasonParticipants(roster, history.allPairings);
   const standings = computeStandings(toPlayerInputs(participants), history.completed);
-  const nameById = new Map(roster.map((p) => [p.id, p.full_name || p.email]));
+  const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
   const roundsPlayed = history.rounds.filter((r) => r.status === "completed").length;
 
   return (
     <>
-      <SiteHeader isOfficer={viewer.isOfficer} currentPath="/standings" />
+      <SiteHeader isOfficer={officer} currentPath="/standings" />
 
       <main className="mx-auto max-w-5xl px-6 py-16">
         <p className="label">{season.name}</p>
@@ -65,11 +61,7 @@ export default async function StandingsPage() {
           </EmptyState>
         ) : (
           <div className="mt-10">
-            <StandingsTable
-              rows={standings}
-              nameById={nameById}
-              highlightId={viewer.profile.id}
-            />
+            <StandingsTable rows={standings} nameById={nameById} />
           </div>
         )}
 

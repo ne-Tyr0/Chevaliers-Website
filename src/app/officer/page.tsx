@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
 import {
+  addPlayer,
   clearPairings,
   completeRound,
   createSeason,
   generatePairings,
   recordResult,
   setCheckIn,
+  setPlayerActive,
   startRound,
+  unlockOfficer,
 } from "@/lib/club/actions";
 import {
   getActiveSeason,
@@ -17,19 +19,25 @@ import {
   getRoster,
   getRoundPairings,
   getSeasonHistory,
-  getViewer,
 } from "@/lib/club/queries";
-import type { PairingRow, ProfileRow } from "@/lib/supabase/database.types";
+import { isOfficer } from "@/lib/officer/session";
+import type { PairingRow, PlayerRow } from "@/lib/supabase/database.types";
 
-export const metadata: Metadata = { title: "Run a round" };
+export const metadata: Metadata = { title: "Officers" };
 
 export default async function OfficerPage({ searchParams }: PageProps<"/officer">) {
-  const viewer = await getViewer();
-  if (!viewer) redirect("/login");
-  if (!viewer.isOfficer) redirect("/?error=officers_only");
-
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : null;
+  const officer = await isOfficer();
+
+  if (!officer) {
+    return (
+      <>
+        <SiteHeader isOfficer={false} currentPath="/officer" />
+        <PasscodeGate error={error} />
+      </>
+    );
+  }
 
   const season = await getActiveSeason();
 
@@ -41,15 +49,7 @@ export default async function OfficerPage({ searchParams }: PageProps<"/officer"
         <p className="label">Officers</p>
         <h1 className="mt-3 text-4xl">Run a round</h1>
 
-        {error ? (
-          <p
-            role="alert"
-            className="mt-6 border-l-2 py-1 pl-4 text-sm"
-            style={{ borderColor: "var(--color-ink)" }}
-          >
-            {error}
-          </p>
-        ) : null}
+        {error ? <ErrorNote>{error}</ErrorNote> : null}
 
         {season ? (
           <SeasonPanel seasonId={season.id} seasonName={season.name} />
@@ -58,6 +58,43 @@ export default async function OfficerPage({ searchParams }: PageProps<"/officer"
         )}
       </main>
     </>
+  );
+}
+
+function PasscodeGate({ error }: { error: string | null }) {
+  return (
+    <main className="mx-auto max-w-md px-6 py-24">
+      <Pawn className="mb-8 h-8 w-auto" />
+      <h1 className="text-3xl">Officer tools</h1>
+      <p className="text-muted mt-3 text-sm leading-relaxed">
+        Running rounds and entering results needs the club passcode. Standings are
+        open to everyone and need nothing.
+      </p>
+
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+
+      <form action={unlockOfficer} className="mt-8">
+        <label className="label block" htmlFor="passcode">
+          Passcode
+        </label>
+        <input
+          id="passcode"
+          name="passcode"
+          type="password"
+          autoComplete="current-password"
+          required
+          className="mt-2 w-full border bg-transparent px-4 py-2.5 text-sm"
+          style={{ borderColor: "var(--rule-strong)" }}
+        />
+        <button
+          type="submit"
+          className="mt-4 w-full cursor-pointer border px-5 py-2.5 text-sm transition-colors hover:bg-ink hover:text-cream"
+          style={{ borderColor: "var(--color-ink)" }}
+        >
+          Unlock
+        </button>
+      </form>
+    </main>
   );
 }
 
@@ -108,6 +145,7 @@ async function SeasonPanel({
     : [[], []];
 
   const checkedIn = new Set(checkedInIds);
+  const active = roster.filter((p) => p.is_active);
 
   return (
     <>
@@ -128,16 +166,16 @@ async function SeasonPanel({
         <>
           <Section
             title={`Round ${currentRound.round_number} · who is here`}
-            note={`${checkedIn.size} of ${roster.length} checked in`}
+            note={`${checkedIn.size} of ${active.length} checked in`}
           >
-            {roster.length === 0 ? (
+            {active.length === 0 ? (
               <Note>
-                Nobody has signed in to the site yet. Members appear here once they
-                have logged in with their school account for the first time.
+                The roster is empty. Add players below, then check in whoever turned
+                up.
               </Note>
             ) : (
               <ul className="mt-4 grid gap-x-8 gap-y-1 sm:grid-cols-2">
-                {roster.map((player) => (
+                {active.map((player) => (
                   <CheckInRow
                     key={player.id}
                     player={player}
@@ -173,7 +211,72 @@ async function SeasonPanel({
           </Section>
         </>
       ) : null}
+
+      <RosterSection roster={roster} />
     </>
+  );
+}
+
+function RosterSection({ roster }: { roster: PlayerRow[] }) {
+  const retired = roster.filter((p) => !p.is_active);
+
+  return (
+    <Section title="Roster" note={`${roster.length - retired.length} active`}>
+      <form action={addPlayer} className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="sr-only" htmlFor="player-name">
+          Player name
+        </label>
+        <input
+          id="player-name"
+          name="fullName"
+          required
+          placeholder="Add a player by name"
+          className="border bg-transparent px-4 py-2.5 text-sm"
+          style={{ borderColor: "var(--rule-strong)" }}
+        />
+        <SubmitButton>Add</SubmitButton>
+      </form>
+
+      {roster.length > 0 ? (
+        <ul className="mt-6 grid gap-x-8 gap-y-1 sm:grid-cols-2">
+          {roster.map((player) => (
+            <li
+              key={player.id}
+              className="flex items-center justify-between border-b py-2"
+              style={{ borderColor: "var(--rule)" }}
+            >
+              <span className={player.is_active ? "text-sm" : "text-faint text-sm"}>
+                {player.full_name}
+                {!player.is_active ? (
+                  <span className="text-faint ml-2 text-xs">retired</span>
+                ) : null}
+              </span>
+              <form action={setPlayerActive}>
+                <input type="hidden" name="playerId" value={player.id} />
+                <input
+                  type="hidden"
+                  name="active"
+                  value={player.is_active ? "false" : "true"}
+                />
+                <button
+                  type="submit"
+                  className="text-faint cursor-pointer text-xs transition-colors hover:text-ink"
+                >
+                  {player.is_active ? "Retire" : "Reinstate"}
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <p className="text-faint mt-4 max-w-prose text-xs leading-relaxed">
+        Retiring a player hides them from check-in but keeps their games, because
+        those games are part of other players&rsquo; tiebreaks. Names appear on the
+        public standings page, so use whatever form the club is comfortable
+        publishing.
+      </p>
+    </Section>
   );
 }
 
@@ -183,7 +286,7 @@ function CheckInRow({
   present,
   locked,
 }: {
-  player: ProfileRow;
+  player: PlayerRow;
   roundId: string;
   present: boolean;
   locked: boolean;
@@ -193,11 +296,8 @@ function CheckInRow({
       className="flex items-center justify-between border-b py-2"
       style={{ borderColor: "var(--rule)" }}
     >
-      <span className={present ? "" : "text-faint"}>
-        {player.full_name || player.email}
-        {player.role === "officer" ? (
-          <span className="text-faint ml-2 text-xs">officer</span>
-        ) : null}
+      <span className={present ? "text-sm" : "text-faint text-sm"}>
+        {player.full_name}
       </span>
 
       {locked ? (
@@ -229,11 +329,11 @@ function PairingList({
   roundStatus,
 }: {
   pairings: PairingRow[];
-  roster: ProfileRow[];
+  roster: PlayerRow[];
   roundId: string;
   roundStatus: string;
 }) {
-  const nameById = new Map(roster.map((p) => [p.id, p.full_name || p.email]));
+  const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
   const outstanding = pairings.filter((p) => p.result === "pending").length;
   const rematches = pairings.filter((p) => p.is_rematch).length;
 
@@ -323,7 +423,9 @@ function Player({ name, color }: { name?: string; color: string | null }) {
     <span>
       {name ?? "Unknown"}
       {color ? (
-        <span className="text-faint ml-1 text-xs">({color === "white" ? "W" : "B"})</span>
+        <span className="text-faint ml-1 text-xs">
+          ({color === "white" ? "W" : "B"})
+        </span>
       ) : null}
     </span>
   );
@@ -397,6 +499,18 @@ function Note({ children }: { children: React.ReactNode }) {
       <Pawn className="text-faint mt-0.5 h-4 w-auto shrink-0" />
       <p className="text-muted max-w-prose text-sm leading-relaxed">{children}</p>
     </div>
+  );
+}
+
+function ErrorNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      role="alert"
+      className="mt-6 border-l-2 py-1 pl-4 text-sm"
+      style={{ borderColor: "var(--color-ink)" }}
+    >
+      {children}
+    </p>
   );
 }
 

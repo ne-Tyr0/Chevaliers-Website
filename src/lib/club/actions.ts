@@ -2,36 +2,77 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { assertOfficer, signInOfficer, signOutOfficer } from "@/lib/officer/session";
+import { createAdminClient } from "@/lib/supabase/server";
 import {
   buildPlayerStates,
   PairingError,
   pairRound,
   type CompletedPairing,
 } from "@/lib/swiss";
-import { getActiveSeason, getSeasonHistory, getViewer } from "./queries";
+import { getActiveSeason, getSeasonHistory } from "./queries";
 
 /** Upper bound for the placeholder pairing number. Wide enough that ties are rare. */
 const PAIRING_NUMBER_RANGE = 1_000_000;
-
-async function requireOfficer() {
-  const viewer = await getViewer();
-  if (!viewer?.isOfficer) {
-    redirect("/?error=officers_only");
-  }
-  return viewer;
-}
 
 function backToOfficer(error?: string): never {
   redirect(error ? `/officer?error=${encodeURIComponent(error)}` : "/officer");
 }
 
+export async function unlockOfficer(formData: FormData) {
+  const passcode = String(formData.get("passcode") ?? "");
+  const ok = await signInOfficer(passcode);
+  redirect(ok ? "/officer" : "/officer?error=That+passcode+is+not+right.");
+}
+
+export async function lockOfficer() {
+  await signOutOfficer();
+  redirect("/");
+}
+
+export async function addPlayer(formData: FormData) {
+  await assertOfficer();
+  const fullName = String(formData.get("fullName") ?? "").trim();
+  if (!fullName) backToOfficer("A player needs a name.");
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("players").insert({ full_name: fullName });
+  if (error) backToOfficer(error.message);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  backToOfficer();
+}
+
+/**
+ * Retire or reinstate a player.
+ *
+ * Never a delete: their games are part of other players' tiebreaks, so removing
+ * the row would silently change everyone else's standings.
+ */
+export async function setPlayerActive(formData: FormData) {
+  await assertOfficer();
+  const playerId = String(formData.get("playerId") ?? "");
+  const active = String(formData.get("active") ?? "") === "true";
+  if (!playerId) backToOfficer("Missing player.");
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("players")
+    .update({ is_active: active })
+    .eq("id", playerId);
+  if (error) backToOfficer(error.message);
+
+  revalidatePath("/officer");
+  backToOfficer();
+}
+
 export async function createSeason(formData: FormData) {
-  await requireOfficer();
+  await assertOfficer();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) backToOfficer("A season needs a name.");
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("seasons").insert({ name, status: "active" });
   if (error) backToOfficer(error.message);
 
@@ -47,7 +88,7 @@ export async function createSeason(formData: FormData) {
  * round from an incomplete one would use the wrong scores.
  */
 export async function startRound() {
-  await requireOfficer();
+  await assertOfficer();
   const season = await getActiveSeason();
   if (!season) backToOfficer("There is no active season yet.");
 
@@ -74,7 +115,7 @@ export async function startRound() {
 
   const nextNumber = rounds.reduce((max, r) => Math.max(max, r.round_number), 0) + 1;
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("rounds").insert({
     season_id: season.id,
     round_number: nextNumber,
@@ -87,13 +128,13 @@ export async function startRound() {
 }
 
 export async function setCheckIn(formData: FormData) {
-  await requireOfficer();
+  await assertOfficer();
   const roundId = String(formData.get("roundId") ?? "");
   const playerId = String(formData.get("playerId") ?? "");
   const present = String(formData.get("present") ?? "") === "true";
   if (!roundId || !playerId) backToOfficer("Missing round or player.");
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = present
     ? await supabase
         .from("round_check_ins")
@@ -117,11 +158,11 @@ export async function setCheckIn(formData: FormData) {
  * assigned once and then kept for the rest of their time at the club.
  */
 export async function generatePairings(formData: FormData) {
-  await requireOfficer();
+  await assertOfficer();
   const roundId = String(formData.get("roundId") ?? "");
   if (!roundId) backToOfficer("Missing round.");
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const season = await getActiveSeason();
   if (!season) backToOfficer("There is no active season.");
 
@@ -146,7 +187,7 @@ export async function generatePairings(formData: FormData) {
   }
 
   const { data: players } = await supabase
-    .from("profiles")
+    .from("players")
     .select("*")
     .in("id", checkedInIds);
 
@@ -159,7 +200,7 @@ export async function generatePairings(formData: FormData) {
   for (const player of needsNumber) {
     const pairingNumber = 1 + Math.floor(Math.random() * PAIRING_NUMBER_RANGE);
     const { error } = await supabase
-      .from("profiles")
+      .from("players")
       .update({ pairing_number: pairingNumber })
       .eq("id", player.id);
     if (error) backToOfficer(`Could not assign a pairing number: ${error.message}`);
@@ -206,15 +247,16 @@ export async function generatePairings(formData: FormData) {
 
   revalidatePath("/officer");
   revalidatePath("/standings");
+  revalidatePath("/");
   backToOfficer();
 }
 
 export async function clearPairings(formData: FormData) {
-  await requireOfficer();
+  await assertOfficer();
   const roundId = String(formData.get("roundId") ?? "");
   if (!roundId) backToOfficer("Missing round.");
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase.from("pairings").delete().eq("round_id", roundId);
   if (error) backToOfficer(error.message);
 
@@ -226,7 +268,7 @@ export async function clearPairings(formData: FormData) {
 }
 
 export async function recordResult(formData: FormData) {
-  await requireOfficer();
+  await assertOfficer();
   const pairingId = String(formData.get("pairingId") ?? "");
   const result = String(formData.get("result") ?? "");
 
@@ -235,7 +277,7 @@ export async function recordResult(formData: FormData) {
     backToOfficer("That is not a valid result.");
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { error } = await supabase
     .from("pairings")
     .update({ result: result as (typeof allowed)[number] })
@@ -244,15 +286,16 @@ export async function recordResult(formData: FormData) {
 
   revalidatePath("/officer");
   revalidatePath("/standings");
+  revalidatePath("/");
   backToOfficer();
 }
 
 export async function completeRound(formData: FormData) {
-  await requireOfficer();
+  await assertOfficer();
   const roundId = String(formData.get("roundId") ?? "");
   if (!roundId) backToOfficer("Missing round.");
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data: boards } = await supabase
     .from("pairings")
     .select("result")
@@ -273,5 +316,6 @@ export async function completeRound(formData: FormData) {
 
   revalidatePath("/officer");
   revalidatePath("/standings");
+  revalidatePath("/");
   backToOfficer();
 }

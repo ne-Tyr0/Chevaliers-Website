@@ -27,25 +27,14 @@ export function supabaseAnonKey(): string {
 }
 
 /**
- * The school domain sign-ins are restricted to, for example `example.edu`.
- * Server-side only — it is deliberately not a NEXT_PUBLIC_ variable.
+ * Bypasses row level security, so it must never reach the browser. Only ever
+ * used inside server actions that have already checked the officer passcode.
  */
-export function allowedEmailDomain(): string {
-  return required("ALLOWED_EMAIL_DOMAIN", process.env.ALLOWED_EMAIL_DOMAIN)
-    .trim()
-    .toLowerCase()
-    .replace(/^@/, "");
+export function supabaseServiceRoleKey(): string {
+  return required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-/**
- * Whether an address belongs to the club's school domain.
- *
- * Google is also told to restrict the account chooser via its `hd` parameter,
- * but that is a hint to the sign-in UI rather than a guarantee, so the address
- * is checked again here once we actually hold the session.
- */
-export function isAllowedEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const domain = allowedEmailDomain();
-  return email.trim().toLowerCase().endsWith(`@${domain}`);
+/** The shared secret that unlocks the officer screens. */
+export function officerPasscode(): string {
+  return required("OFFICER_PASSCODE", process.env.OFFICER_PASSCODE);
 }

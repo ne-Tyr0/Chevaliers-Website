@@ -1,33 +1,27 @@
-import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
-import { supabaseAnonKey, supabaseUrl } from "@/lib/env";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { supabaseAnonKey, supabaseServiceRoleKey, supabaseUrl } from "@/lib/env";
 import type { Database } from "./database.types";
 
 /**
- * Supabase client for server components, route handlers and server actions.
+ * Read-only client for public pages.
  *
- * Create a new one per request — never share it across requests, since it
- * carries the caller's session.
+ * Uses the anon key, so it is bound by row level security: the policies allow
+ * selects and nothing else. There are no sessions or cookies to carry, because
+ * the site has no accounts.
  */
-export async function createClient() {
-  const cookieStore = await cookies();
+export function createPublicClient() {
+  return createSupabaseClient<Database>(supabaseUrl(), supabaseAnonKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
-  return createServerClient<Database>(supabaseUrl(), supabaseAnonKey(), {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll(cookiesToSet) {
-        try {
-          for (const { name, value, options } of cookiesToSet) {
-            cookieStore.set(name, value, options);
-          }
-        } catch {
-          // Server components cannot set cookies. That is fine: the proxy
-          // refreshes the session on every request, so the write here is only
-          // ever a shortcut.
-        }
-      },
-    },
+/**
+ * Privileged client for officer actions. Bypasses row level security, which is
+ * exactly why it must only be constructed inside a server action that has
+ * already verified the officer passcode — never in a component that renders.
+ */
+export function createAdminClient() {
+  return createSupabaseClient<Database>(supabaseUrl(), supabaseServiceRoleKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
 }

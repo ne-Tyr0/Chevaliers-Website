@@ -1,37 +1,14 @@
-import { createClient } from "@/lib/supabase/server";
+import { createPublicClient } from "@/lib/supabase/server";
 import type {
   PairingRow,
-  ProfileRow,
+  PlayerRow,
   RoundRow,
   SeasonRow,
 } from "@/lib/supabase/database.types";
 import type { CompletedPairing, PlayerProfileInput } from "@/lib/swiss";
 
-export interface Viewer {
-  profile: ProfileRow;
-  isOfficer: boolean;
-}
-
-/** The signed-in member's own profile, or null if they have none. */
-export async function getViewer(): Promise<Viewer | null> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!data) return null;
-  return { profile: data, isOfficer: data.role === "officer" };
-}
-
 export async function getActiveSeason(): Promise<SeasonRow | null> {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data } = await supabase
     .from("seasons")
     .select("*")
@@ -41,7 +18,7 @@ export async function getActiveSeason(): Promise<SeasonRow | null> {
 }
 
 export async function getSeasonRounds(seasonId: string): Promise<RoundRow[]> {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data } = await supabase
     .from("rounds")
     .select("*")
@@ -51,7 +28,7 @@ export async function getSeasonRounds(seasonId: string): Promise<RoundRow[]> {
 }
 
 export async function getRoundPairings(roundId: string): Promise<PairingRow[]> {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data } = await supabase
     .from("pairings")
     .select("*")
@@ -61,7 +38,7 @@ export async function getRoundPairings(roundId: string): Promise<PairingRow[]> {
 }
 
 export async function getCheckedInIds(roundId: string): Promise<string[]> {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data } = await supabase
     .from("round_check_ins")
     .select("player_id")
@@ -69,12 +46,13 @@ export async function getCheckedInIds(roundId: string): Promise<string[]> {
   return (data ?? []).map((row) => row.player_id);
 }
 
-/** Everyone in the club, ordered for display. */
-export async function getRoster(): Promise<ProfileRow[]> {
-  const supabase = await createClient();
+/** The club roster, active members first, alphabetically within each group. */
+export async function getRoster(): Promise<PlayerRow[]> {
+  const supabase = createPublicClient();
   const { data } = await supabase
-    .from("profiles")
+    .from("players")
     .select("*")
+    .order("is_active", { ascending: false })
     .order("full_name", { ascending: true });
   return data ?? [];
 }
@@ -96,7 +74,7 @@ export interface SeasonHistory {
  * depend on relationship metadata in the generated types.
  */
 export async function getSeasonHistory(seasonId: string): Promise<SeasonHistory> {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const rounds = await getSeasonRounds(seasonId);
 
   const roundNumberById = new Map(rounds.map((r) => [r.id, r.round_number]));
@@ -133,21 +111,21 @@ export async function getSeasonHistory(seasonId: string): Promise<SeasonHistory>
  * whole club roll.
  */
 export function seasonParticipants(
-  roster: readonly ProfileRow[],
+  roster: readonly PlayerRow[],
   pairings: readonly PairingRow[],
-): ProfileRow[] {
+): PlayerRow[] {
   const seen = new Set<string>();
   for (const p of pairings) {
     seen.add(p.player_a_id);
     if (p.player_b_id) seen.add(p.player_b_id);
   }
-  return roster.filter((profile) => seen.has(profile.id));
+  return roster.filter((player) => seen.has(player.id));
 }
 
-/** Profiles in the shape the engine wants, with a stable fallback seed. */
-export function toPlayerInputs(profiles: readonly ProfileRow[]): PlayerProfileInput[] {
-  return profiles.map((profile) => ({
-    id: profile.id,
-    pairingNumber: profile.pairing_number ?? 0,
+/** Players in the shape the engine wants, with a stable fallback seed. */
+export function toPlayerInputs(players: readonly PlayerRow[]): PlayerProfileInput[] {
+  return players.map((player) => ({
+    id: player.id,
+    pairingNumber: player.pairing_number ?? 0,
   }));
 }

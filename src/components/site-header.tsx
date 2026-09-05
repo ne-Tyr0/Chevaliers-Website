@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { signOut } from "@/app/login/actions";
+import { lockOfficer } from "@/lib/club/actions";
 import { Wordmark } from "./wordmark";
 
 export function SiteHeader({
@@ -11,7 +11,7 @@ export function SiteHeader({
 }) {
   const links = [
     { href: "/standings", label: "Standings" },
-    ...(isOfficer ? [{ href: "/officer", label: "Run a round" }] : []),
+    { href: "/officer", label: isOfficer ? "Run a round" : "Officers" },
   ];
 
   return (
@@ -43,14 +43,16 @@ export function SiteHeader({
           })}
         </nav>
 
-        <form action={signOut} className="ml-auto">
-          <button
-            type="submit"
-            className="text-faint text-sm transition-colors hover:text-ink"
-          >
-            Sign out
-          </button>
-        </form>
+        {isOfficer ? (
+          <form action={lockOfficer} className="ml-auto">
+            <button
+              type="submit"
+              className="text-faint text-sm transition-colors hover:text-ink"
+            >
+              Lock officer tools
+            </button>
+          </form>
+        ) : null}
       </div>
     </header>
   );

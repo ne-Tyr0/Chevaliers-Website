@@ -2,23 +2,28 @@
  * Database types.
  *
  * Hand-written to match `supabase/migrations`, in the same shape the Supabase
- * CLI emits. Once the project is live you can regenerate them instead:
+ * CLI emits. Row types must stay type aliases rather than interfaces:
+ * supabase-js constrains rows to Record<string, unknown>, and TypeScript grants
+ * implicit index signatures to aliases but not to interfaces — as interfaces the
+ * whole schema silently resolves to `never`.
+ *
+ * Once the project is live you can regenerate them instead:
  *
  *   npx supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts
  */
 
-export type MemberRole = "member" | "officer";
 export type SeasonStatus = "active" | "completed";
 export type RoundStatus = "pending" | "in_progress" | "completed";
 export type DbPieceColor = "white" | "black";
 export type DbPairingResult = "pending" | "a_win" | "b_win" | "draw";
 
-export type ProfileRow = {
+export type PlayerRow = {
   id: string;
   full_name: string;
-  email: string;
-  role: MemberRole;
   pairing_number: number | null;
+  /** Reserved for linking this roster entry to a future login. Null today. */
+  user_id: string | null;
+  is_active: boolean;
   created_at: string;
 };
 
@@ -60,22 +65,22 @@ export type PairingRow = {
 export type Database = {
   public: {
     Tables: {
-      profiles: {
-        Row: ProfileRow;
+      players: {
+        Row: PlayerRow;
         Insert: {
-          id: string;
-          email: string;
-          full_name?: string;
-          role?: MemberRole;
+          id?: string;
+          full_name: string;
           pairing_number?: number | null;
+          user_id?: string | null;
+          is_active?: boolean;
           created_at?: string;
         };
         Update: {
           id?: string;
-          email?: string;
           full_name?: string;
-          role?: MemberRole;
           pairing_number?: number | null;
+          user_id?: string | null;
+          is_active?: boolean;
           created_at?: string;
         };
         Relationships: [];
@@ -163,17 +168,9 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      is_officer: {
-        Args: Record<PropertyKey, never>;
-        Returns: boolean;
-      };
-      is_member: {
-        Args: Record<PropertyKey, never>;
-        Returns: boolean;
-      };
+      [_ in never]: never;
     };
     Enums: {
-      member_role: MemberRole;
       season_status: SeasonStatus;
       round_status: RoundStatus;
       piece_color: DbPieceColor;

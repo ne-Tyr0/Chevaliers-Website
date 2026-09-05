@@ -1,27 +1,22 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
 import { Wordmark } from "@/components/wordmark";
-import { getActiveSeason, getSeasonHistory, getViewer } from "@/lib/club/queries";
+import { getActiveSeason, getSeasonHistory } from "@/lib/club/queries";
+import { isOfficer } from "@/lib/officer/session";
 
 export default async function HomePage() {
-  const viewer = await getViewer();
-  if (!viewer) redirect("/login");
-
-  const season = await getActiveSeason();
+  const [officer, season] = await Promise.all([isOfficer(), getActiveSeason()]);
   const history = season ? await getSeasonHistory(season.id) : null;
   const roundsPlayed =
     history?.rounds.filter((r) => r.status === "completed").length ?? 0;
 
-  const firstName = viewer.profile.full_name.split(" ")[0] || "there";
-
   return (
     <>
-      <SiteHeader isOfficer={viewer.isOfficer} currentPath="/" />
+      <SiteHeader isOfficer={officer} currentPath="/" />
 
       <main className="mx-auto max-w-5xl px-6 py-20">
-        <p className="label">Welcome back, {firstName}</p>
+        <p className="label">School chess club</p>
         <h1 className="mt-4 text-5xl text-balance">
           <Wordmark /> Chess Club
         </h1>
@@ -30,8 +25,9 @@ export default async function HomePage() {
           <p className="text-muted mt-6 max-w-prose leading-relaxed">
             {season.name} is under way — {roundsPlayed}{" "}
             {roundsPlayed === 1 ? "round" : "rounds"} played so far. The season runs
-            as one continuous Swiss event, so every club meeting is a round and you
-            can join or miss a week without falling out of the standings.
+            as one continuous Swiss event, so every club meeting is a round and
+            players can join late or miss a week without falling out of the
+            standings.
           </p>
         ) : (
           <p className="text-muted mt-6 max-w-prose leading-relaxed">
@@ -48,7 +44,7 @@ export default async function HomePage() {
           >
             View standings
           </Link>
-          {viewer.isOfficer ? (
+          {officer ? (
             <Link
               href="/officer"
               className="text-muted border px-5 py-2.5 text-sm transition-colors hover:text-ink"
