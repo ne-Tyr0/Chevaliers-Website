@@ -1,7 +1,12 @@
 import { pairRound } from "../pairing";
 import { createRng, Rng } from "../rng";
-import { buildPlayerStates, CompletedPairing, PlayerProfileInput } from "../state";
-import { PlayerState } from "../types";
+import {
+  buildPlayerStates,
+  CompletedMatchup,
+  MatchupGame,
+  PlayerProfileInput,
+} from "../state";
+import { GAMES_PER_MATCHUP, PlayerState } from "../types";
 
 export interface SimPlayer extends PlayerProfileInput {
   /** First round this player is eligible to be paired (1 = there from the start). */
@@ -18,7 +23,7 @@ export interface SimOptions {
 export interface SimRound {
   roundNumber: number;
   checkedIn: string[];
-  pairings: CompletedPairing[];
+  matchups: CompletedMatchup[];
   byePlayerId: string | null;
   /** Boards the engine had to repeat because the round admitted nothing else. */
   forcedRematches: number;
@@ -28,8 +33,8 @@ export interface SimRound {
 
 export interface SimOutcome {
   rounds: SimRound[];
-  /** Every completed pairing across the season, in round order. */
-  completed: CompletedPairing[];
+  /** Every completed matchup across the season, in round order. */
+  completed: CompletedMatchup[];
   /** Final season state for the whole roster. */
   finalStates: PlayerState[];
 }
@@ -55,7 +60,7 @@ export function roster(size: number, joinRounds: Record<string, number> = {}): S
 export function simulate(players: readonly SimPlayer[], options: SimOptions): SimOutcome {
   const rng = createRng(options.seed ?? 20260905);
   const attends = options.attends ?? (() => true);
-  const completed: CompletedPairing[] = [];
+  const completed: CompletedMatchup[] = [];
   const rounds: SimRound[] = [];
 
   for (let roundNumber = 1; roundNumber <= options.rounds; roundNumber++) {
@@ -71,20 +76,32 @@ export function simulate(players: readonly SimPlayer[], options: SimOptions): Si
       rng: createRng((options.seed ?? 20260905) + roundNumber),
     });
 
-    const roundPairings = pairings.map((pairing) => ({
+    // Officers record colours per game, so the harness stands in for them by
+    // alternating from whichever colour the engine suggested for the matchup.
+    const roundMatchups: CompletedMatchup[] = pairings.map((pairing) => ({
       roundNumber,
       playerAId: pairing.playerAId,
       playerBId: pairing.playerBId,
-      colorA: pairing.colorA,
-      colorB: pairing.colorB,
-      result: pairing.playerBId === null ? ("a_win" as const) : decideResult(rng),
+      games:
+        pairing.playerBId === null
+          ? []
+          : Array.from({ length: GAMES_PER_MATCHUP }, (_, index): MatchupGame => ({
+              gameNumber: index + 1,
+              colorA:
+                index % 2 === 0
+                  ? (pairing.colorA ?? "white")
+                  : pairing.colorA === "white"
+                    ? "black"
+                    : "white",
+              result: decideResult(rng),
+            })),
     }));
 
-    completed.push(...roundPairings);
+    completed.push(...roundMatchups);
     rounds.push({
       roundNumber,
       checkedIn: present.map((p) => p.id),
-      pairings: roundPairings,
+      matchups: roundMatchups,
       byePlayerId,
       forcedRematches,
       metBefore,
@@ -111,11 +128,11 @@ export function matchKey(a: string, b: string): string {
 }
 
 /** Every match-up played so far, as unordered keys. */
-export function playedMatchKeys(completed: readonly CompletedPairing[]): Set<string> {
+export function playedMatchKeys(completed: readonly CompletedMatchup[]): Set<string> {
   const keys = new Set<string>();
-  for (const p of completed) {
-    if (p.playerBId === null) continue;
-    keys.add(matchKey(p.playerAId, p.playerBId));
+  for (const m of completed) {
+    if (m.playerBId === null) continue;
+    keys.add(matchKey(m.playerAId, m.playerBId));
   }
   return keys;
 }
@@ -147,14 +164,18 @@ export function rematchFreePairingExists(
 /** Longest run of consecutive games with the same pieces, ignoring byes. */
 export function longestColorStreak(
   playerId: string,
-  completed: readonly CompletedPairing[],
+  completed: readonly CompletedMatchup[],
 ): number {
   const colors: string[] = [];
 
-  for (const p of [...completed].sort((x, y) => x.roundNumber - y.roundNumber)) {
-    if (p.playerBId === null) continue;
-    if (p.playerAId === playerId && p.colorA) colors.push(p.colorA);
-    else if (p.playerBId === playerId && p.colorB) colors.push(p.colorB);
+  for (const m of [...completed].sort((x, y) => x.roundNumber - y.roundNumber)) {
+    if (m.playerBId === null) continue;
+    for (const game of m.games) {
+      if (m.playerAId === playerId && game.colorA) colors.push(game.colorA);
+      else if (m.playerBId === playerId && game.colorA) {
+        colors.push(game.colorA === "white" ? "black" : "white");
+      }
+    }
   }
 
   let longest = 0;

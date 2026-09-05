@@ -1,22 +1,24 @@
-import { CompletedPairing, gameRecordsByPlayer, PlayerProfileInput } from "./state";
-import { GameRecord, isPlayed, POINTS } from "./types";
+import { CompletedMatchup, playerHistory, PlayerProfileInput } from "./state";
+import { isPlayed } from "./types";
 
 export interface StandingRow {
   playerId: string;
+  /** Game points: every game of every matchup counts. */
   score: number;
-  /** Byes are excluded — this is games actually played at a board. */
+  /** Games actually played at a board; byes and forfeits are excluded. */
   gamesPlayed: number;
   wins: number;
   draws: number;
   losses: number;
+  /** Matchups sat out. */
   byes: number;
-  /** Points collected without playing: a no-show by the opponent. */
+  /** Games won without playing, because the opponent did not appear. */
   forfeitWins: number;
   /** Games lost without playing, including a double forfeit. */
   forfeitLosses: number;
-  /** Sum of opponents' current scores. */
+  /** Sum of the scores of opponents actually faced, once per matchup. */
   buchholz: number;
-  /** Sum of defeated opponents' scores plus half of each drawn opponent's score. */
+  /** Opponents' scores weighted by the share of each matchup won against them. */
   sonnebornBerger: number;
   /** 1-based; players who tie on every criterion share a rank. */
   rank: number;
@@ -26,62 +28,59 @@ export interface StandingRow {
  * Standings for one season, sorted by score, then Buchholz, then
  * Sonneborn-Berger.
  *
- * Because club attendance varies, `gamesPlayed` is reported alongside `score` —
- * raw points are misleading when players have sat out different numbers of
- * rounds.
+ * Score is game points, so a 2-1 matchup is worth 2 rather than 1.
  *
- * Byes and forfeits are treated as games against a ghost opponent worth 0
- * points: they award their score without inflating either tiebreak, and they do
- * not count toward games played.
+ * Both tiebreaks are computed per matchup, not per game. Buchholz adds an
+ * opponent's score once for the matchup, and Sonneborn-Berger weights it by the
+ * share of that matchup won — so beating a strong opponent 3-0 counts for more
+ * than scraping 2-1, and with one game per matchup it reduces to the ordinary
+ * definition. That keeps rounds recorded before the club moved to three-game
+ * matchups scoring on the same basis as the ones after.
+ *
+ * Byes and forfeits are unplayed, so they award their points but contribute
+ * nothing to either tiebreak and nothing to games played.
  */
 export function computeStandings(
   profiles: readonly PlayerProfileInput[],
-  pairings: readonly CompletedPairing[],
+  matchups: readonly CompletedMatchup[],
 ): StandingRow[] {
-  const history = gameRecordsByPlayer(pairings);
+  const history = playerHistory(matchups);
 
   const scores = new Map<string, number>();
   for (const profile of profiles) {
-    scores.set(profile.id, totalScore(history.get(profile.id) ?? []));
+    const encounters = history.get(profile.id)?.encounters ?? [];
+    scores.set(
+      profile.id,
+      encounters.reduce((sum, e) => sum + e.points, 0),
+    );
   }
 
-  // An opponent who is not in `profiles` (for instance a player removed from
-  // the roster mid-season) contributes 0, the same as a bye.
+  // An opponent who is not in `profiles` — someone removed from the roster
+  // mid-season — contributes 0, the same as a bye.
   const scoreOf = (playerId: string | null): number =>
     playerId === null ? 0 : (scores.get(playerId) ?? 0);
 
   const rows = profiles.map((profile) => {
-    const games = history.get(profile.id) ?? [];
+    const entry = history.get(profile.id);
+    const games = entry?.games ?? [];
+    const encounters = entry?.encounters ?? [];
 
     let wins = 0;
     let draws = 0;
     let losses = 0;
-    let byes = 0;
     let forfeitWins = 0;
     let forfeitLosses = 0;
-    let buchholz = 0;
-    let sonnebornBerger = 0;
 
     for (const game of games) {
-      // Only games actually played at a board feed the tiebreaks. A bye or a
-      // forfeit contributes nothing, so neither can inflate them.
-      const opponentScore = isPlayed(game.outcome) ? scoreOf(game.opponentId) : 0;
-      buchholz += opponentScore;
-
       switch (game.outcome) {
         case "win":
           wins += 1;
-          sonnebornBerger += opponentScore;
           break;
         case "draw":
           draws += 1;
-          sonnebornBerger += opponentScore / 2;
           break;
         case "loss":
           losses += 1;
-          break;
-        case "bye":
-          byes += 1;
           break;
         case "forfeit_win":
           forfeitWins += 1;
@@ -93,10 +92,29 @@ export function computeStandings(
       }
     }
 
+    let byes = 0;
+    let buchholz = 0;
+    let sonnebornBerger = 0;
+
+    for (const encounter of encounters) {
+      if (encounter.opponentId === null) {
+        byes += 1;
+        continue;
+      }
+      // A matchup where nothing was actually played is not a played game, so it
+      // stays out of both tiebreaks entirely.
+      if (encounter.playedCount === 0) continue;
+
+      const opponentScore = scoreOf(encounter.opponentId);
+      buchholz += opponentScore;
+      sonnebornBerger +=
+        opponentScore * (encounter.playedPoints / encounter.playedCount);
+    }
+
     return {
       playerId: profile.id,
       score: scores.get(profile.id) ?? 0,
-      gamesPlayed: wins + draws + losses,
+      gamesPlayed: games.filter((g) => isPlayed(g.outcome)).length,
       wins,
       draws,
       losses,
@@ -128,8 +146,4 @@ function compareStandings(a: StandingRow, b: StandingRow): number {
     return b.sonnebornBerger - a.sonnebornBerger;
   }
   return 0;
-}
-
-function totalScore(games: readonly GameRecord[]): number {
-  return games.reduce((sum, game) => sum + POINTS[game.outcome], 0);
 }

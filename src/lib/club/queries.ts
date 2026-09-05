@@ -1,11 +1,18 @@
 import { createPublicClient } from "@/lib/supabase/server";
 import type {
+  GameRow,
   PairingRow,
   PlayerRow,
   RoundRow,
   SeasonRow,
 } from "@/lib/supabase/database.types";
-import type { CompletedPairing, PlayerProfileInput } from "@/lib/swiss";
+import type { CompletedMatchup, MatchupGame, PlayerProfileInput } from "@/lib/swiss";
+
+/** A matchup together with its games, which is how the UI always wants it. */
+export interface MatchupView {
+  pairing: PairingRow;
+  games: GameRow[];
+}
 
 export async function getActiveSeason(): Promise<SeasonRow | null> {
   const supabase = createPublicClient();
@@ -27,16 +34,6 @@ export async function getSeasonRounds(seasonId: string): Promise<RoundRow[]> {
   return data ?? [];
 }
 
-export async function getRoundPairings(roundId: string): Promise<PairingRow[]> {
-  const supabase = createPublicClient();
-  const { data } = await supabase
-    .from("pairings")
-    .select("*")
-    .eq("round_id", roundId)
-    .order("board_number", { ascending: true });
-  return data ?? [];
-}
-
 /** The club roster, active members first, alphabetically within each group. */
 export async function getRoster(): Promise<PlayerRow[]> {
   const supabase = createPublicClient();
@@ -50,30 +47,29 @@ export async function getRoster(): Promise<PlayerRow[]> {
 
 export interface SeasonHistory {
   rounds: RoundRow[];
-  /** Finished games only — a pending board contributes nothing yet. */
-  completed: CompletedPairing[];
-  /** Every pairing of the season, including pending ones. */
-  allPairings: PairingRow[];
+  /** Every matchup of the season, with its games attached. */
+  matchupViews: MatchupView[];
+  /** The same matchups in the shape the engine reads. */
+  matchups: CompletedMatchup[];
   roundNumberById: Map<string, number>;
 }
 
 /**
- * Load the season's match history in the shape the pairing engine and the
- * standings calculation expect.
+ * Load the season in the shape the pairing engine and standings expect.
  *
- * Fetched as two queries rather than a nested join, so the result does not
- * depend on relationship metadata in the generated types.
+ * Three queries rather than nested joins, so nothing depends on relationship
+ * metadata in the hand-written types.
  */
 export async function getSeasonHistory(seasonId: string): Promise<SeasonHistory> {
   const supabase = createPublicClient();
   const rounds = await getSeasonRounds(seasonId);
-
   const roundNumberById = new Map(rounds.map((r) => [r.id, r.round_number]));
+
   if (rounds.length === 0) {
-    return { rounds, completed: [], allPairings: [], roundNumberById };
+    return { rounds, matchupViews: [], matchups: [], roundNumberById };
   }
 
-  const { data } = await supabase
+  const { data: pairings } = await supabase
     .from("pairings")
     .select("*")
     .in(
@@ -81,19 +77,105 @@ export async function getSeasonHistory(seasonId: string): Promise<SeasonHistory>
       rounds.map((r) => r.id),
     );
 
-  const allPairings = data ?? [];
-  const completed: CompletedPairing[] = allPairings
-    .filter((p) => p.result !== "pending")
-    .map((p) => ({
-      roundNumber: roundNumberById.get(p.round_id) ?? 0,
-      playerAId: p.player_a_id,
-      playerBId: p.player_b_id,
-      colorA: p.color_a,
-      colorB: p.color_b,
-      result: p.result as "a_win" | "b_win" | "draw",
-    }));
+  const allPairings = pairings ?? [];
+  const gamesByPairing = await getGamesFor(allPairings.map((p) => p.id));
 
-  return { rounds, completed, allPairings, roundNumberById };
+  const matchupViews = allPairings
+    .map((pairing) => ({ pairing, games: gamesByPairing.get(pairing.id) ?? [] }))
+    .sort(
+      (a, b) =>
+        (roundNumberById.get(a.pairing.round_id) ?? 0) -
+          (roundNumberById.get(b.pairing.round_id) ?? 0) ||
+        a.pairing.board_number - b.pairing.board_number,
+    );
+
+  return {
+    rounds,
+    matchupViews,
+    matchups: matchupViews.map((view) =>
+      toCompletedMatchup(view, roundNumberById.get(view.pairing.round_id) ?? 0),
+    ),
+    roundNumberById,
+  };
+}
+
+async function getGamesFor(pairingIds: readonly string[]) {
+  const byPairing = new Map<string, GameRow[]>();
+  if (pairingIds.length === 0) return byPairing;
+
+  const supabase = createPublicClient();
+  const { data } = await supabase
+    .from("games")
+    .select("*")
+    .in("pairing_id", pairingIds)
+    .order("game_number", { ascending: true });
+
+  for (const game of data ?? []) {
+    const list = byPairing.get(game.pairing_id);
+    if (list) list.push(game);
+    else byPairing.set(game.pairing_id, [game]);
+  }
+  return byPairing;
+}
+
+/**
+ * Convert to the engine's shape, dropping games that have no result yet.
+ *
+ * The matchup itself is always included even when nothing has been played, so
+ * the two players still count as having met and will not be paired again.
+ */
+export function toCompletedMatchup(
+  view: MatchupView,
+  roundNumber: number,
+): CompletedMatchup {
+  return {
+    roundNumber,
+    playerAId: view.pairing.player_a_id,
+    playerBId: view.pairing.player_b_id,
+    games: view.games
+      .filter((game) => game.result !== "pending")
+      .map(
+        (game): MatchupGame => ({
+          gameNumber: game.game_number,
+          colorA: game.color_a,
+          result: game.result as MatchupGame["result"],
+        }),
+      ),
+  };
+}
+
+export async function getRoundMatchups(roundId: string): Promise<MatchupView[]> {
+  const supabase = createPublicClient();
+  const { data } = await supabase
+    .from("pairings")
+    .select("*")
+    .eq("round_id", roundId)
+    .order("board_number", { ascending: true });
+
+  const pairings = data ?? [];
+  const gamesByPairing = await getGamesFor(pairings.map((p) => p.id));
+  return pairings.map((pairing) => ({
+    pairing,
+    games: gamesByPairing.get(pairing.id) ?? [],
+  }));
+}
+
+export async function getMatchup(pairingId: string): Promise<MatchupView | null> {
+  const supabase = createPublicClient();
+  const { data: pairing } = await supabase
+    .from("pairings")
+    .select("*")
+    .eq("id", pairingId)
+    .maybeSingle();
+  if (!pairing) return null;
+
+  const { data: games } = await supabase
+    .from("games")
+    .select("*")
+    .eq("pairing_id", pairingId)
+    .order("game_number", { ascending: true });
+
+  return { pairing, games: games ?? [] };
 }
 
 /**
@@ -103,12 +185,12 @@ export async function getSeasonHistory(seasonId: string): Promise<SeasonHistory>
  */
 export function seasonParticipants(
   roster: readonly PlayerRow[],
-  pairings: readonly PairingRow[],
+  matchups: readonly MatchupView[],
 ): PlayerRow[] {
   const seen = new Set<string>();
-  for (const p of pairings) {
-    seen.add(p.player_a_id);
-    if (p.player_b_id) seen.add(p.player_b_id);
+  for (const { pairing } of matchups) {
+    seen.add(pairing.player_a_id);
+    if (pairing.player_b_id) seen.add(pairing.player_b_id);
   }
   return roster.filter((player) => seen.has(player.id));
 }
@@ -119,4 +201,28 @@ export function toPlayerInputs(players: readonly PlayerRow[]): PlayerProfileInpu
     id: player.id,
     pairingNumber: player.pairing_number ?? 0,
   }));
+}
+
+/** The aggregate score of a matchup, as "2 – 1". */
+export function matchupScore(view: MatchupView): { a: number; b: number } {
+  let a = 0;
+  let b = 0;
+  for (const game of view.games) {
+    switch (game.result) {
+      case "a_win":
+      case "a_forfeit_win":
+        a += 1;
+        break;
+      case "b_win":
+      case "b_forfeit_win":
+        b += 1;
+        break;
+      case "draw":
+        a += 0.5;
+        b += 0.5;
+        break;
+      // pending and double_forfeit award nothing to either player.
+    }
+  }
+  return { a, b };
 }

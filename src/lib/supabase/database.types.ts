@@ -56,10 +56,19 @@ export type PairingRow = {
   board_number: number;
   player_a_id: string;
   player_b_id: string | null;
-  color_a: DbPieceColor | null;
-  color_b: DbPieceColor | null;
-  result: DbPairingResult;
   is_rematch: boolean;
+  created_at: string;
+};
+
+/** One game inside a matchup. Player B's colour is the opposite of `color_a`. */
+export type GameRow = {
+  id: string;
+  pairing_id: string;
+  game_number: number;
+  color_a: DbPieceColor | null;
+  result: DbPairingResult;
+  updated_by: string | null;
+  updated_at: string;
   created_at: string;
 };
 
@@ -130,9 +139,6 @@ export type Database = {
           board_number: number;
           player_a_id: string;
           player_b_id?: string | null;
-          color_a?: DbPieceColor | null;
-          color_b?: DbPieceColor | null;
-          result?: DbPairingResult;
           is_rematch?: boolean;
           created_at?: string;
         };
@@ -142,10 +148,31 @@ export type Database = {
           board_number?: number;
           player_a_id?: string;
           player_b_id?: string | null;
-          color_a?: DbPieceColor | null;
-          color_b?: DbPieceColor | null;
-          result?: DbPairingResult;
           is_rematch?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      games: {
+        Row: GameRow;
+        Insert: {
+          id?: string;
+          pairing_id: string;
+          game_number: number;
+          color_a?: DbPieceColor | null;
+          result?: DbPairingResult;
+          updated_by?: string | null;
+          updated_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          pairing_id?: string;
+          game_number?: number;
+          color_a?: DbPieceColor | null;
+          result?: DbPairingResult;
+          updated_by?: string | null;
+          updated_at?: string;
           created_at?: string;
         };
         Relationships: [];

@@ -5,6 +5,16 @@
  * and which has Black. It has nothing to do with the site's visual palette.
  */
 
+/**
+ * Games in a standard matchup, and therefore what a bye is worth.
+ *
+ * Under game-point scoring a matchup win is worth this much, so a bye has to
+ * match it — otherwise sitting out a round costs two points against everyone
+ * who played. Older rounds recorded as a single game still score from their own
+ * game count; this constant only sets the value of a bye.
+ */
+export const GAMES_PER_MATCHUP = 3;
+
 /** Which set of pieces a player has in a game. */
 export type PieceColor = "white" | "black";
 

@@ -9,18 +9,18 @@ import {
   seasonParticipants,
   toPlayerInputs,
 } from "@/lib/club/queries";
-import { isOfficer } from "@/lib/officer/session";
-import { computeStandings, gameRecordsByPlayer } from "@/lib/swiss";
+import { currentRole } from "@/lib/officer/session";
+import { computeStandings, playerHistory } from "@/lib/swiss";
 
 export const metadata: Metadata = { title: "Standings" };
 
 export default async function StandingsPage() {
-  const [officer, season] = await Promise.all([isOfficer(), getActiveSeason()]);
+  const [role, season] = await Promise.all([currentRole(), getActiveSeason()]);
 
   if (!season) {
     return (
       <>
-        <SiteHeader isOfficer={officer} currentPath="/standings" />
+        <SiteHeader role={role} currentPath="/standings" />
         <main className="mx-auto max-w-5xl px-6 py-20">
           <h1 className="text-4xl">Standings</h1>
           <EmptyState>
@@ -37,19 +37,24 @@ export default async function StandingsPage() {
     getSeasonHistory(season.id),
   ]);
 
-  const participants = seasonParticipants(roster, history.allPairings);
-  const standings = computeStandings(toPlayerInputs(participants), history.completed);
+  const participants = seasonParticipants(roster, history.matchupViews);
+  const standings = computeStandings(toPlayerInputs(participants), history.matchups);
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
-  const gamesByPlayer = gameRecordsByPlayer(history.completed);
+  const historyByPlayer = playerHistory(history.matchups);
+  const gamesByPlayer = new Map(
+    [...historyByPlayer].map(([id, entry]) => [id, entry.games]),
+  );
   const roundsPlayed = history.rounds.filter((round) =>
-    history.allPairings.some(
-      (p) => p.round_id === round.id && p.result !== "pending",
+    history.matchupViews.some(
+      (view) =>
+        view.pairing.round_id === round.id &&
+        view.games.some((game) => game.result !== "pending"),
     ),
   ).length;
 
   return (
     <>
-      <SiteHeader isOfficer={officer} currentPath="/standings" />
+      <SiteHeader role={role} currentPath="/standings" />
 
       <main className="mx-auto max-w-5xl px-6 py-16">
         <p className="label">{season.name}</p>

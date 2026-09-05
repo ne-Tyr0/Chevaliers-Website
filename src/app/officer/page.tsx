@@ -1,39 +1,41 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { formatMatchupScore } from "@/components/matchup-games";
 import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
 import {
-  addManualPairing,
+  addManualMatchup,
   addPlayer,
   clearPairings,
   completeRound,
   createSeason,
+  deleteMatchup,
   generatePairings,
-  deletePairing,
-  recordResult,
   setPlayerActive,
   startRound,
-  unlockOfficer,
+  unlockRole,
 } from "@/lib/club/actions";
 import {
   getActiveSeason,
   getRoster,
-  getRoundPairings,
+  getRoundMatchups,
   getSeasonHistory,
+  type MatchupView,
 } from "@/lib/club/queries";
-import { isOfficer } from "@/lib/officer/session";
-import type { PairingRow, PlayerRow } from "@/lib/supabase/database.types";
+import { currentRole } from "@/lib/officer/session";
+import type { PlayerRow } from "@/lib/supabase/database.types";
 
 export const metadata: Metadata = { title: "Officers" };
 
 export default async function OfficerPage({ searchParams }: PageProps<"/officer">) {
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : null;
-  const officer = await isOfficer();
+  const role = await currentRole();
 
-  if (!officer) {
+  if (role !== "officer") {
     return (
       <>
-        <SiteHeader isOfficer={false} currentPath="/officer" />
+        <SiteHeader role={role} currentPath="/officer" />
         <PasscodeGate error={error} />
       </>
     );
@@ -43,7 +45,7 @@ export default async function OfficerPage({ searchParams }: PageProps<"/officer"
 
   return (
     <>
-      <SiteHeader isOfficer currentPath="/officer" />
+      <SiteHeader role={role} currentPath="/officer" />
 
       <main className="mx-auto max-w-5xl px-6 py-16">
         <p className="label">Officers</p>
@@ -67,15 +69,15 @@ function PasscodeGate({ error }: { error: string | null }) {
   return (
     <main className="mx-auto max-w-md px-6 py-24">
       <Pawn className="mb-8 h-8 w-auto" />
-      <h1 className="text-3xl">Officer tools</h1>
+      <h1 className="text-3xl">Club tools</h1>
       <p className="text-muted mt-3 text-sm leading-relaxed">
-        Running rounds and entering results needs the club passcode. Standings are
-        open to everyone and need nothing.
+        Officers run rounds and manage the roster. Arbiters report results in the
+        open round. Standings and results are open to everyone and need nothing.
       </p>
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-      <form action={unlockOfficer} className="mt-8">
+      <form action={unlockRole} className="mt-8">
         <label className="label block" htmlFor="passcode">
           Passcode
         </label>
@@ -139,8 +141,14 @@ async function SeasonPanel({
   ]);
 
   const currentRound = history.rounds.at(-1) ?? null;
-  const pairings = currentRound ? await getRoundPairings(currentRound.id) : [];
+  const matchups = currentRound ? await getRoundMatchups(currentRound.id) : [];
   const active = roster.filter((p) => p.is_active);
+  const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
+
+  const outstanding = matchups.reduce(
+    (sum, view) => sum + view.games.filter((g) => g.result === "pending").length,
+    0,
+  );
 
   return (
     <>
@@ -170,48 +178,259 @@ async function SeasonPanel({
       ) : null}
 
       {currentRound ? (
-        <>
-          <Section
-            title={`Round ${currentRound.round_number} · boards`}
-            note={`${active.length} active players`}
-          >
-            {pairings.length === 0 ? (
-              <>
-                <Note>
-                  Every active player on the roster is paired. With an odd number
-                  one bye is given automatically, and anyone who does not finish
-                  their game is forfeited when you close the round.
-                </Note>
-                <form action={generatePairings} className="mt-5">
-                  <input type="hidden" name="roundId" value={currentRound.id} />
-                  <SubmitButton>Generate pairings</SubmitButton>
-                </form>
-              </>
-            ) : (
-              <PairingList
-                pairings={pairings}
-                roster={roster}
-                roundId={currentRound.id}
-                roundStatus={currentRound.status}
-              />
-            )}
+        <Section
+          title={`Round ${currentRound.round_number} · matchups`}
+          note={`${active.length} active players`}
+        >
+          {matchups.length === 0 ? (
+            <>
+              <Note>
+                Every active player is paired into a matchup of three games. With
+                an odd number one bye is given automatically.
+              </Note>
+              <form action={generatePairings} className="mt-5">
+                <input type="hidden" name="roundId" value={currentRound.id} />
+                <SubmitButton>Generate matchups</SubmitButton>
+              </form>
+            </>
+          ) : (
+            <MatchupList
+              matchups={matchups}
+              nameById={nameById}
+              roundId={currentRound.id}
+              roundStatus={currentRound.status}
+              outstanding={outstanding}
+            />
+          )}
 
-            {currentRound.status !== "completed" ? (
-              <ManualBoardForm roundId={currentRound.id} players={active} />
-            ) : null}
-          </Section>
-        </>
+          {currentRound.status !== "completed" ? (
+            <ManualMatchupForm roundId={currentRound.id} players={active} />
+          ) : null}
+        </Section>
       ) : null}
     </>
   );
 }
 
-async function RosterSection() {
-  const roster = await getRoster();
-  const retired = roster.filter((p) => !p.is_active);
+function MatchupList({
+  matchups,
+  nameById,
+  roundId,
+  roundStatus,
+  outstanding,
+}: {
+  matchups: MatchupView[];
+  nameById: ReadonlyMap<string, string>;
+  roundId: string;
+  roundStatus: string;
+  outstanding: number;
+}) {
+  const rematches = matchups.filter((v) => v.pairing.is_rematch).length;
 
   return (
-    <Section title="Roster" note={`${roster.length - retired.length} active`}>
+    <>
+      {rematches > 0 ? (
+        <Note>
+          {rematches === 1 ? "One matchup repeats" : `${rematches} matchups repeat`}{" "}
+          an earlier meeting. That only happens when no other pairing of this round
+          was possible.
+        </Note>
+      ) : null}
+
+      <ul className="mt-5">
+        {matchups.map((view) => {
+          const isBye = view.pairing.player_b_id === null;
+          const left = view.games.filter((g) => g.result === "pending").length;
+
+          return (
+            <li
+              key={view.pairing.id}
+              className="flex items-center gap-3 border-b"
+              style={{ borderColor: "var(--rule)" }}
+            >
+              <Link
+                href={`/matchup/${view.pairing.id}`}
+                className="flex min-w-0 flex-1 items-center gap-4 py-3 text-sm transition-colors hover:bg-cream-deep"
+              >
+                <span className="text-faint w-6" data-numeric>
+                  {view.pairing.board_number}
+                </span>
+                <span className="min-w-0 flex-1">
+                  {nameById.get(view.pairing.player_a_id)}
+                  {isBye ? (
+                    <span className="text-faint"> — bye</span>
+                  ) : (
+                    <>
+                      <span className="text-faint mx-2">v</span>
+                      {nameById.get(view.pairing.player_b_id!)}
+                    </>
+                  )}
+                  {view.pairing.is_rematch ? (
+                    <span className="text-faint ml-2 text-xs">repeat</span>
+                  ) : null}
+                </span>
+                <span className="tabular-nums whitespace-nowrap">
+                  {isBye ? (
+                    <span className="text-faint text-xs">—</span>
+                  ) : (
+                    formatMatchupScore(view)
+                  )}
+                </span>
+                <span className="text-faint w-20 text-right text-xs">
+                  {isBye ? "" : left === 0 ? "complete" : `${left} to go`}
+                </span>
+              </Link>
+
+              {roundStatus !== "completed" ? (
+                <form action={deleteMatchup}>
+                  <input type="hidden" name="pairingId" value={view.pairing.id} />
+                  <button
+                    type="submit"
+                    aria-label={`Remove board ${view.pairing.board_number}`}
+                    className="text-faint cursor-pointer text-xs transition-colors hover:text-ink"
+                  >
+                    Remove
+                  </button>
+                </form>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="mt-6 flex flex-wrap gap-3">
+        {roundStatus !== "completed" && outstanding === 0 ? (
+          <form action={completeRound}>
+            <input type="hidden" name="roundId" value={roundId} />
+            <SubmitButton>Close round</SubmitButton>
+          </form>
+        ) : null}
+
+        {roundStatus !== "completed" && outstanding > 0 ? (
+          <form action={completeRound}>
+            <input type="hidden" name="roundId" value={roundId} />
+            <input type="hidden" name="forfeitUnplayed" value="true" />
+            <SubmitButton>
+              Close round, forfeiting {outstanding}{" "}
+              {outstanding === 1 ? "game" : "games"}
+            </SubmitButton>
+          </form>
+        ) : null}
+
+        {roundStatus !== "completed" ? (
+          <form action={clearPairings}>
+            <input type="hidden" name="roundId" value={roundId} />
+            <button
+              type="submit"
+              className="text-faint cursor-pointer border px-4 py-2 text-sm transition-colors hover:text-ink"
+              style={{ borderColor: "var(--rule-strong)" }}
+            >
+              Clear and re-pair
+            </button>
+          </form>
+        ) : null}
+
+        {outstanding > 0 ? (
+          <p className="text-faint self-center text-sm">
+            {outstanding} {outstanding === 1 ? "game" : "games"} still to report
+          </p>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Add a matchup by hand.
+ *
+ * How a club catches up: meetings played before the site existed go in round by
+ * round, then each matchup's games are filled in from its own page.
+ */
+function ManualMatchupForm({
+  roundId,
+  players,
+}: {
+  roundId: string;
+  players: PlayerRow[];
+}) {
+  return (
+    <div className="mt-10 border-t pt-6" style={{ borderColor: "var(--rule)" }}>
+      <h3 className="label">Add a matchup by hand</h3>
+      <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
+        For meetings played before the club used this site. Add the matchup, then
+        open it to enter its three games.
+      </p>
+
+      <form
+        action={addManualMatchup}
+        className="mt-4 flex flex-wrap items-end gap-3"
+      >
+        <input type="hidden" name="roundId" value={roundId} />
+
+        <SelectField label="Player" name="playerAId" id="player-a" required>
+          {players.map((player) => (
+            <option key={player.id} value={player.id}>
+              {player.full_name}
+            </option>
+          ))}
+        </SelectField>
+
+        <SelectField label="Opponent" name="playerBId" id="player-b">
+          <option value="bye">No opponent (bye)</option>
+          {players.map((player) => (
+            <option key={player.id} value={player.id}>
+              {player.full_name}
+            </option>
+          ))}
+        </SelectField>
+
+        <SubmitButton>Add matchup</SubmitButton>
+      </form>
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  name,
+  id,
+  required,
+  children,
+}: {
+  label: string;
+  name: string;
+  id: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="label block" htmlFor={id}>
+        {label}
+      </label>
+      <select
+        id={id}
+        name={name}
+        required={required}
+        defaultValue=""
+        className="mt-2 border bg-transparent px-3 py-2 text-sm"
+        style={{ borderColor: "var(--rule-strong)" }}
+      >
+        <option value="" disabled>
+          Choose
+        </option>
+        {children}
+      </select>
+    </div>
+  );
+}
+
+async function RosterSection() {
+  const roster = await getRoster();
+  const active = roster.filter((p) => p.is_active).length;
+
+  return (
+    <Section title="Roster" note={`${active} active`}>
       <form action={addPlayer} className="mt-4 flex flex-wrap items-center gap-3">
         <label className="sr-only" htmlFor="player-name">
           Player name
@@ -261,230 +480,12 @@ async function RosterSection() {
       ) : null}
 
       <p className="text-faint mt-4 max-w-prose text-xs leading-relaxed">
-        Retiring a player hides them from check-in but keeps their games, because
-        those games are part of other players&rsquo; tiebreaks. Names appear on the
-        public standings page, so use whatever form the club is comfortable
+        Retiring a player hides them from future rounds but keeps their games,
+        because those games are part of other players&rsquo; tiebreaks. Names appear
+        on the public standings page, so use whatever form the club is comfortable
         publishing.
       </p>
     </Section>
-  );
-}
-
-function PairingList({
-  pairings,
-  roster,
-  roundId,
-  roundStatus,
-}: {
-  pairings: PairingRow[];
-  roster: PlayerRow[];
-  roundId: string;
-  roundStatus: string;
-}) {
-  const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
-  const outstanding = pairings.filter((p) => p.result === "pending").length;
-  const rematches = pairings.filter((p) => p.is_rematch).length;
-
-  return (
-    <>
-      {rematches > 0 ? (
-        <Note>
-          {rematches === 1 ? "One board repeats" : `${rematches} boards repeat`} an
-          earlier match-up. That only happens when no other pairing of this round
-          was possible — everyone left has already played everyone else they could
-          face.
-        </Note>
-      ) : null}
-
-      <ul className="mt-5">
-        {pairings.map((pairing) => (
-          <li
-            key={pairing.id}
-            className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b py-3"
-            style={{ borderColor: "var(--rule)" }}
-          >
-            <span className="text-faint w-6 text-sm" data-numeric>
-              {pairing.board_number}
-            </span>
-
-            {pairing.player_b_id === null ? (
-              <span className="text-muted text-sm">
-                {nameById.get(pairing.player_a_id)} — bye, 1 point
-              </span>
-            ) : (
-              <>
-                <span className="min-w-0 flex-1 text-sm">
-                  <Player
-                    name={nameById.get(pairing.player_a_id)}
-                    color={pairing.color_a}
-                  />
-                  <span className="text-faint mx-2">v</span>
-                  <Player
-                    name={nameById.get(pairing.player_b_id)}
-                    color={pairing.color_b}
-                  />
-                  {pairing.is_rematch ? (
-                    <span className="text-faint ml-2 text-xs">repeat</span>
-                  ) : null}
-                </span>
-
-                <ResultPicker pairingId={pairing.id} result={pairing.result} />
-              </>
-            )}
-
-            {roundStatus !== "completed" ? (
-              <form action={deletePairing}>
-                <input type="hidden" name="pairingId" value={pairing.id} />
-                <button
-                  type="submit"
-                  aria-label={`Remove board ${pairing.board_number}`}
-                  className="text-faint cursor-pointer text-xs transition-colors hover:text-ink"
-                >
-                  Remove
-                </button>
-              </form>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-
-      <div className="mt-6 flex flex-wrap gap-3">
-        {roundStatus !== "completed" && outstanding === 0 ? (
-          <form action={completeRound}>
-            <input type="hidden" name="roundId" value={roundId} />
-            <SubmitButton>Close round</SubmitButton>
-          </form>
-        ) : null}
-
-        {roundStatus !== "completed" && outstanding > 0 ? (
-          <form action={completeRound}>
-            <input type="hidden" name="roundId" value={roundId} />
-            <input type="hidden" name="forfeitUnplayed" value="true" />
-            <SubmitButton>
-              Close round, forfeiting {outstanding}{" "}
-              {outstanding === 1 ? "game" : "games"}
-            </SubmitButton>
-          </form>
-        ) : null}
-
-        {roundStatus !== "completed" ? (
-          <form action={clearPairings}>
-            <input type="hidden" name="roundId" value={roundId} />
-            <button
-              type="submit"
-              className="text-faint cursor-pointer border px-4 py-2 text-sm transition-colors hover:text-ink"
-              style={{ borderColor: "var(--rule-strong)" }}
-            >
-              Clear and re-pair
-            </button>
-          </form>
-        ) : null}
-
-        {outstanding > 0 ? (
-          <p className="text-faint self-center text-sm">
-            {outstanding} {outstanding === 1 ? "board" : "boards"} still to report
-          </p>
-        ) : null}
-      </div>
-    </>
-  );
-}
-
-function Player({ name, color }: { name?: string; color: string | null }) {
-  return (
-    <span>
-      {name ?? "Unknown"}
-      {color ? (
-        <span className="text-faint ml-1 text-xs">
-          ({color === "white" ? "W" : "B"})
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
-const PLAYED_RESULTS = [
-  { value: "a_win", label: "1–0", hint: "White won" },
-  { value: "draw", label: "½–½", hint: "Draw" },
-  { value: "b_win", label: "0–1", hint: "Black won" },
-];
-
-const FORFEIT_RESULTS = [
-  { value: "a_forfeit_win", label: "+ −", hint: "Black did not appear" },
-  { value: "b_forfeit_win", label: "− +", hint: "White did not appear" },
-  { value: "double_forfeit", label: "− −", hint: "Neither player appeared" },
-];
-
-function ResultPicker({ pairingId, result }: { pairingId: string; result: string }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      {PLAYED_RESULTS.map((option) => (
-        <ResultButton
-          key={option.value}
-          pairingId={pairingId}
-          option={option}
-          selected={result === option.value}
-        />
-      ))}
-
-      <span aria-hidden className="text-faint px-1 text-xs">
-        |
-      </span>
-
-      {FORFEIT_RESULTS.map((option) => (
-        <ResultButton
-          key={option.value}
-          pairingId={pairingId}
-          option={option}
-          selected={result === option.value}
-          muted
-        />
-      ))}
-    </div>
-  );
-}
-
-function ResultButton({
-  pairingId,
-  option,
-  selected,
-  muted,
-}: {
-  pairingId: string;
-  option: { value: string; label: string; hint: string };
-  selected: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <form action={recordResult}>
-      <input type="hidden" name="pairingId" value={pairingId} />
-      {/* Pressing the current result again clears it back to unreported. */}
-      <input
-        type="hidden"
-        name="result"
-        value={selected ? "pending" : option.value}
-      />
-      <button
-        type="submit"
-        aria-pressed={selected}
-        title={option.hint}
-        className={`cursor-pointer border px-2.5 py-1 text-xs transition-colors hover:bg-ink hover:text-cream ${
-          muted && !selected ? "text-faint" : ""
-        }`}
-        style={
-          selected
-            ? {
-                borderColor: "var(--color-ink)",
-                backgroundColor: "var(--color-ink)",
-                color: "var(--color-cream)",
-              }
-            : { borderColor: "var(--rule-strong)" }
-        }
-      >
-        {option.label}
-        <span className="sr-only"> — {option.hint}</span>
-      </button>
-    </form>
   );
 }
 
@@ -538,106 +539,5 @@ function SubmitButton({ children }: { children: React.ReactNode }) {
     >
       {children}
     </button>
-  );
-}
-
-const selectStyle = { borderColor: "var(--rule-strong)" };
-const selectClass = "mt-2 border bg-transparent px-3 py-2 text-sm";
-
-/**
- * Enter one board by hand.
- *
- * This is the catch-up path: a club that played meetings before it had this site
- * can key those rounds in, and from then on the engine has the history it needs
- * to avoid rematches and to score the season correctly.
- */
-function ManualBoardForm({
-  roundId,
-  players,
-}: {
-  roundId: string;
-  players: PlayerRow[];
-}) {
-  return (
-    <div className="mt-10 border-t pt-6" style={{ borderColor: "var(--rule)" }}>
-      <h3 className="label">Add a board by hand</h3>
-      <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
-        For meetings played before the club used this site, or a game the pairing
-        engine did not generate. If you cannot remember who had which pieces, pick
-        either way round — it only nudges colour balance in later rounds.
-      </p>
-
-      <form
-        action={addManualPairing}
-        className="mt-4 flex flex-wrap items-end gap-3"
-      >
-        <input type="hidden" name="roundId" value={roundId} />
-
-        <div>
-          <label className="label block" htmlFor="white-player">
-            White
-          </label>
-          <select
-            id="white-player"
-            name="whiteId"
-            required
-            defaultValue=""
-            className={selectClass}
-            style={selectStyle}
-          >
-            <option value="" disabled>
-              Choose a player
-            </option>
-            {players.map((player) => (
-              <option key={player.id} value={player.id}>
-                {player.full_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="label block" htmlFor="black-player">
-            Black
-          </label>
-          <select
-            id="black-player"
-            name="blackId"
-            defaultValue=""
-            className={selectClass}
-            style={selectStyle}
-          >
-            <option value="" disabled>
-              Choose a player
-            </option>
-            <option value="bye">No opponent (bye)</option>
-            {players.map((player) => (
-              <option key={player.id} value={player.id}>
-                {player.full_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="label block" htmlFor="board-result">
-            Result
-          </label>
-          <select
-            id="board-result"
-            name="result"
-            defaultValue="a_win"
-            className={selectClass}
-            style={selectStyle}
-          >
-            <option value="a_win">1–0 (White won)</option>
-            <option value="draw">½–½ (draw)</option>
-            <option value="b_win">0–1 (Black won)</option>
-          </select>
-        </div>
-
-        <SubmitButton>Add board</SubmitButton>
-      </form>
-    </div>
   );
 }

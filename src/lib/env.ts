@@ -38,3 +38,14 @@ export function supabaseServiceRoleKey(): string {
 export function officerPasscode(): string {
   return required("OFFICER_PASSCODE", process.env.OFFICER_PASSCODE);
 }
+
+/**
+ * The secret that lets an arbiter report results, and nothing else.
+ *
+ * Optional: a club that does not use arbiters simply leaves it unset, and the
+ * arbiter screen reports that it is not configured rather than failing.
+ */
+export function arbiterPasscode(): string | null {
+  const value = process.env.ARBITER_PASSCODE?.trim();
+  return value ? value : null;
+}

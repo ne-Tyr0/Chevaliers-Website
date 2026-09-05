@@ -3,21 +3,23 @@ import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
 import { Wordmark } from "@/components/wordmark";
 import { getActiveSeason, getSeasonHistory } from "@/lib/club/queries";
-import { isOfficer } from "@/lib/officer/session";
+import { currentRole } from "@/lib/officer/session";
 
 export default async function HomePage() {
-  const [officer, season] = await Promise.all([isOfficer(), getActiveSeason()]);
+  const [role, season] = await Promise.all([currentRole(), getActiveSeason()]);
   const history = season ? await getSeasonHistory(season.id) : null;
   const roundsPlayed =
     history?.rounds.filter((round) =>
-      history.allPairings.some(
-        (p) => p.round_id === round.id && p.result !== "pending",
+      history.matchupViews.some(
+        (view) =>
+          view.pairing.round_id === round.id &&
+          view.games.some((game) => game.result !== "pending"),
       ),
     ).length ?? 0;
 
   return (
     <>
-      <SiteHeader isOfficer={officer} currentPath="/" />
+      <SiteHeader role={role} currentPath="/" />
 
       <main className="mx-auto max-w-5xl px-6 py-20">
         <p className="label">School chess club</p>
@@ -48,7 +50,7 @@ export default async function HomePage() {
           >
             View standings
           </Link>
-          {officer ? (
+          {role === "officer" ? (
             <Link
               href="/officer"
               className="text-muted border px-5 py-2.5 text-sm transition-colors hover:text-ink"

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPlayerStates } from "../state";
+import { GAMES_PER_MATCHUP } from "../types";
 import {
   longestColorStreak,
   matchKey,
@@ -21,7 +22,7 @@ describe.each(ROSTER_SIZES)("a %i-player season over 4 rounds", (size) => {
 
   it("seats every checked-in player exactly once per round", () => {
     for (const round of season.rounds) {
-      const seated = round.pairings.flatMap((p) =>
+      const seated = round.matchups.flatMap((p) =>
         p.playerBId === null ? [p.playerAId] : [p.playerAId, p.playerBId],
       );
       expect(seated.slice().sort()).toEqual(round.checkedIn.slice().sort());
@@ -31,7 +32,7 @@ describe.each(ROSTER_SIZES)("a %i-player season over 4 rounds", (size) => {
 
   it("only repeats a match-up when the round admits no alternative", () => {
     for (const round of season.rounds) {
-      const seated = round.pairings
+      const seated = round.matchups
         .filter((p) => p.playerBId !== null)
         .flatMap((p) => [p.playerAId, p.playerBId!]);
 
@@ -46,7 +47,7 @@ describe.each(ROSTER_SIZES)("a %i-player season over 4 rounds", (size) => {
 
   it("flags every repeat it does produce", () => {
     for (const round of season.rounds) {
-      const actualRepeats = round.pairings.filter(
+      const actualRepeats = round.matchups.filter(
         (p) => p.playerBId !== null && round.metBefore.has(matchKey(p.playerAId, p.playerBId!)),
       ).length;
       expect(actualRepeats).toBe(round.forcedRematches);
@@ -74,16 +75,15 @@ describe.each(ROSTER_SIZES)("a %i-player season over 4 rounds", (size) => {
     }
   });
 
-  it("assigns two colors on every played board and none on a bye", () => {
-    for (const pairing of season.completed) {
-      if (pairing.playerBId === null) {
-        expect(pairing.colorA).toBeNull();
-        expect(pairing.colorB).toBeNull();
+  it("gives a bye no games and every matchup a full set", () => {
+    for (const matchup of season.completed) {
+      if (matchup.playerBId === null) {
+        expect(matchup.games).toHaveLength(0);
       } else {
-        expect([pairing.colorA, pairing.colorB].slice().sort()).toEqual([
-          "black",
-          "white",
-        ]);
+        expect(matchup.games).toHaveLength(GAMES_PER_MATCHUP);
+        for (const game of matchup.games) {
+          expect(["white", "black"]).toContain(game.colorA);
+        }
       }
     }
   });
@@ -97,32 +97,27 @@ describe.each(ROSTER_SIZES)("a %i-player season over 4 rounds", (size) => {
     }
   });
 
-  it("never lets a player's color count drift beyond the standard tolerance", () => {
-    // A difference of two is where a color preference becomes absolute, so it
-    // is the point the engine is obliged to correct from. Anything beyond that
-    // means an absolute preference was ignored.
+  it("keeps colour counts within one matchup's worth of each other", () => {
+    // Colours are now recorded per game by officers rather than assigned by the
+    // engine, so the engine can only influence which matchup a player gets, not
+    // the colours inside it. A three-game matchup alternating W-B-W shifts the
+    // balance by one, so the field should stay within a couple of games.
     for (const state of season.finalStates) {
       expect(
         Math.abs(state.whiteCount - state.blackCount),
         `${state.id} played ${state.whiteCount} white / ${state.blackCount} black`,
-      ).toBeLessThanOrEqual(2);
+      ).toBeLessThanOrEqual(ROUNDS);
     }
   });
 
-  it("keeps most of the field perfectly balanced", () => {
-    const drifted = season.finalStates.filter(
-      (s) => Math.abs(s.whiteCount - s.blackCount) === 2,
-    );
-    // Some drift is unavoidable when two players with the same need have to be
-    // paired, but it should be the exception rather than the norm.
-    expect(drifted.length).toBeLessThanOrEqual(Math.ceil(size / 4));
-  });
-
-  it("awards score consistent with games played and byes", () => {
+  it("scores in game points, bounded by the games actually available", () => {
     for (const state of season.finalStates) {
-      expect(state.score).toBeGreaterThanOrEqual(state.byeCount);
-      expect(state.score).toBeLessThanOrEqual(state.gamesPlayed + state.byeCount);
-      expect(state.gamesPlayed + state.byeCount).toBe(ROUNDS);
+      // A bye is worth a whole matchup, so the floor is byes x games per matchup.
+      const byePoints = state.byeCount * GAMES_PER_MATCHUP;
+      expect(state.score).toBeGreaterThanOrEqual(byePoints);
+      expect(state.score).toBeLessThanOrEqual(state.gamesPlayed + byePoints);
+      // Every round is either a bye or a full matchup.
+      expect(state.gamesPlayed).toBe((ROUNDS - state.byeCount) * GAMES_PER_MATCHUP);
     }
   });
 });
@@ -166,12 +161,13 @@ describe("variable attendance", () => {
     });
 
     const p3 = season.finalStates.find((s) => s.id === "p3")!;
-    expect(p3.gamesPlayed + p3.byeCount).toBe(3);
+    // Three of the four rounds, each a full matchup or a bye.
+    expect(p3.gamesPlayed / GAMES_PER_MATCHUP + p3.byeCount).toBe(3);
 
     const round2 = season.rounds.find((r) => r.roundNumber === 2)!;
     expect(round2.checkedIn).not.toContain("p3");
     expect(
-      round2.pairings.some((p) => p.playerAId === "p3" || p.playerBId === "p3"),
+      round2.matchups.some((p) => p.playerAId === "p3" || p.playerBId === "p3"),
     ).toBe(false);
 
     // Their score carries forward untouched into round 3.

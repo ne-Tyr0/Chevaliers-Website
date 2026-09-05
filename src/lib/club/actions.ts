@@ -2,33 +2,67 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { assertOfficer, signInOfficer, signOutOfficer } from "@/lib/officer/session";
+import {
+  assertCanEnterResults,
+  assertOfficer,
+  signIn,
+  signOut,
+} from "@/lib/officer/session";
 import { createAdminClient } from "@/lib/supabase/server";
+import type { DbPairingResult, DbPieceColor } from "@/lib/supabase/database.types";
 import {
   buildPlayerStates,
+  GAMES_PER_MATCHUP,
   PairingError,
   pairRound,
-  type CompletedPairing,
 } from "@/lib/swiss";
 import { getActiveSeason, getSeasonHistory } from "./queries";
 
 /** Upper bound for the placeholder pairing number. Wide enough that ties are rare. */
 const PAIRING_NUMBER_RANGE = 1_000_000;
 
+const RESULTS = [
+  "pending",
+  "a_win",
+  "b_win",
+  "draw",
+  "a_forfeit_win",
+  "b_forfeit_win",
+  "double_forfeit",
+] as const;
+
 function backToOfficer(error?: string): never {
   redirect(error ? `/officer?error=${encodeURIComponent(error)}` : "/officer");
 }
 
-export async function unlockOfficer(formData: FormData) {
-  const passcode = String(formData.get("passcode") ?? "");
-  const ok = await signInOfficer(passcode);
-  redirect(ok ? "/officer" : "/officer?error=That+passcode+is+not+right.");
+/** Only ever return to a path inside this site. */
+function safePath(value: FormDataEntryValue | null, fallback: string): string {
+  const path = typeof value === "string" ? value : "";
+  return path.startsWith("/") && !path.startsWith("//") ? path : fallback;
 }
 
-export async function lockOfficer() {
-  await signOutOfficer();
+function backTo(path: string, error?: string): never {
+  redirect(error ? `${path}?error=${encodeURIComponent(error)}` : path);
+}
+
+// ---------------------------------------------------------------------------
+// Access
+// ---------------------------------------------------------------------------
+
+export async function unlockRole(formData: FormData) {
+  const role = await signIn(String(formData.get("passcode") ?? ""));
+  if (!role) redirect("/officer?error=That+passcode+is+not+right.");
+  redirect(role === "officer" ? "/officer" : "/arbiter");
+}
+
+export async function lockRole() {
+  await signOut();
   redirect("/");
 }
+
+// ---------------------------------------------------------------------------
+// Roster and seasons — officers only
+// ---------------------------------------------------------------------------
 
 export async function addPlayer(formData: FormData) {
   await assertOfficer();
@@ -81,10 +115,14 @@ export async function createSeason(formData: FormData) {
   backToOfficer();
 }
 
+// ---------------------------------------------------------------------------
+// Rounds — officers only
+// ---------------------------------------------------------------------------
+
 /**
  * Open the next round of the active season.
  *
- * Refuses while an earlier round still has unplayed boards — pairing the next
+ * Refuses while an earlier round still has unplayed games — pairing the next
  * round from an incomplete one would use the wrong scores.
  */
 export async function startRound(formData?: FormData) {
@@ -92,11 +130,14 @@ export async function startRound(formData?: FormData) {
   const season = await getActiveSeason();
   if (!season) backToOfficer("There is no active season yet.");
 
-  const { rounds, allPairings } = await getSeasonHistory(season.id);
+  const { rounds, matchupViews } = await getSeasonHistory(season.id);
 
   const unfinished = rounds.find((round) => {
-    const boards = allPairings.filter((p) => p.round_id === round.id);
-    return boards.length > 0 && boards.some((p) => p.result === "pending");
+    const boards = matchupViews.filter((v) => v.pairing.round_id === round.id);
+    return (
+      boards.length > 0 &&
+      boards.some((v) => v.games.some((g) => g.result === "pending"))
+    );
   });
   if (unfinished) {
     backToOfficer(
@@ -105,11 +146,11 @@ export async function startRound(formData?: FormData) {
   }
 
   const emptyRound = rounds.find(
-    (round) => !allPairings.some((p) => p.round_id === round.id),
+    (round) => !matchupViews.some((v) => v.pairing.round_id === round.id),
   );
   if (emptyRound) {
     backToOfficer(
-      `Round ${emptyRound.round_number} is already open and has no pairings yet.`,
+      `Round ${emptyRound.round_number} is already open and has no matchups yet.`,
     );
   }
 
@@ -132,14 +173,27 @@ export async function startRound(formData?: FormData) {
   backToOfficer();
 }
 
+/** Create the empty games that make up a matchup. */
+async function createGames(
+  supabase: ReturnType<typeof createAdminClient>,
+  pairingId: string,
+) {
+  return supabase.from("games").insert(
+    Array.from({ length: GAMES_PER_MATCHUP }, (_, index) => ({
+      pairing_id: pairingId,
+      game_number: index + 1,
+    })),
+  );
+}
+
 /**
- * Pair every active player for a round and write the boards.
+ * Pair every active player and write the matchups.
  *
- * There is no check-in step: the roster is the field. Anyone who does not
- * complete their game gets forfeited when the round is closed instead.
+ * There is no check-in step: the roster is the field. Each matchup is created
+ * with its games empty, to be filled in as they are played.
  *
- * Anyone playing their first ever game gets a `pairing_number` here — it is
- * assigned once and then kept for the rest of their time at the club.
+ * Anyone playing their first ever game gets a `pairing_number` here — assigned
+ * once, then kept for the rest of their time at the club.
  */
 export async function generatePairings(formData: FormData) {
   await assertOfficer();
@@ -150,13 +204,13 @@ export async function generatePairings(formData: FormData) {
   const season = await getActiveSeason();
   if (!season) backToOfficer("There is no active season.");
 
-  const { rounds, completed, allPairings } = await getSeasonHistory(season.id);
+  const { rounds, matchups, matchupViews } = await getSeasonHistory(season.id);
   const round = rounds.find((r) => r.id === roundId);
   if (!round) backToOfficer("That round is not part of the active season.");
 
-  if (allPairings.some((p) => p.round_id === roundId)) {
+  if (matchupViews.some((v) => v.pairing.round_id === roundId)) {
     backToOfficer(
-      `Round ${round.round_number} already has pairings. Clear them before regenerating.`,
+      `Round ${round.round_number} already has matchups. Clear them before regenerating.`,
     );
   }
 
@@ -171,7 +225,6 @@ export async function generatePairings(formData: FormData) {
     );
   }
 
-  // First game ever: give them their persistent pairing number.
   const needsNumber = players.filter((p) => p.pairing_number === null);
   for (const player of needsNumber) {
     const pairingNumber = 1 + Math.floor(Math.random() * PAIRING_NUMBER_RANGE);
@@ -183,13 +236,9 @@ export async function generatePairings(formData: FormData) {
     player.pairing_number = pairingNumber;
   }
 
-  const priorRounds: CompletedPairing[] = completed.filter(
-    (p) => p.roundNumber < round.round_number,
-  );
-
   const states = buildPlayerStates(
     players.map((p) => ({ id: p.id, pairingNumber: p.pairing_number ?? 0 })),
-    priorRounds,
+    matchups.filter((m) => m.roundNumber < round.round_number),
   );
 
   let outcome;
@@ -203,60 +252,53 @@ export async function generatePairings(formData: FormData) {
     );
   }
 
-  const { error: insertError } = await supabase.from("pairings").insert(
-    outcome.pairings.map((pairing) => ({
-      round_id: roundId,
-      board_number: pairing.boardNumber,
-      player_a_id: pairing.playerAId,
-      player_b_id: pairing.playerBId,
-      color_a: pairing.colorA,
-      color_b: pairing.colorB,
-      // A bye is a completed point the moment it is assigned; there is no game
-      // to play, so it must not sit in the round as an outstanding result.
-      result: pairing.playerBId === null ? ("a_win" as const) : ("pending" as const),
-      is_rematch: pairing.isRematch,
-    })),
-  );
+  const { data: inserted, error: insertError } = await supabase
+    .from("pairings")
+    .insert(
+      outcome.pairings.map((pairing) => ({
+        round_id: roundId,
+        board_number: pairing.boardNumber,
+        player_a_id: pairing.playerAId,
+        player_b_id: pairing.playerBId,
+        is_rematch: pairing.isRematch,
+      })),
+    )
+    .select();
   if (insertError) backToOfficer(insertError.message);
+
+  for (const pairing of inserted ?? []) {
+    // A bye has no games; its points are awarded by the standings calculation.
+    if (pairing.player_b_id === null) continue;
+    const { error } = await createGames(supabase, pairing.id);
+    if (error) backToOfficer(error.message);
+  }
 
   await supabase.from("rounds").update({ status: "in_progress" }).eq("id", roundId);
 
   revalidatePath("/officer");
+  revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/results");
   revalidatePath("/");
   backToOfficer();
 }
 
 /**
- * Record one board by hand.
+ * Add one matchup by hand.
  *
  * This is how a club catches up: meetings played before the site existed can be
- * entered round by round, so the engine has the match history it needs to avoid
- * rematches and to score the season correctly from here on.
+ * entered round by round, so the engine has the history it needs.
  */
-export async function addManualPairing(formData: FormData) {
+export async function addManualMatchup(formData: FormData) {
   await assertOfficer();
   const roundId = String(formData.get("roundId") ?? "");
-  const whiteId = String(formData.get("whiteId") ?? "");
-  const blackId = String(formData.get("blackId") ?? "");
-  const result = String(formData.get("result") ?? "");
-  if (!roundId || !whiteId) backToOfficer("Pick who played.");
+  const playerAId = String(formData.get("playerAId") ?? "");
+  const playerBId = String(formData.get("playerBId") ?? "");
+  if (!roundId || !playerAId) backToOfficer("Pick who played.");
 
-  const isBye = blackId === "" || blackId === "bye";
-  if (!isBye && whiteId === blackId) {
+  const isBye = playerBId === "" || playerBId === "bye";
+  if (!isBye && playerAId === playerBId) {
     backToOfficer("A player cannot play themselves.");
-  }
-
-  const outcomes = [
-    "a_win",
-    "b_win",
-    "draw",
-    "a_forfeit_win",
-    "b_forfeit_win",
-    "double_forfeit",
-  ] as const;
-  if (!isBye && !outcomes.includes(result as (typeof outcomes)[number])) {
-    backToOfficer("Pick a result for the board.");
   }
 
   const supabase = createAdminClient();
@@ -266,56 +308,56 @@ export async function addManualPairing(formData: FormData) {
     .eq("round_id", roundId);
 
   const boards = existing ?? [];
-
-  // The unique indexes stop a player appearing twice in the same column, but
-  // not once as White and again as Black, so check across both here.
-  const alreadySeated = new Set<string>();
+  const seated = new Set<string>();
   for (const board of boards) {
-    alreadySeated.add(board.player_a_id);
-    if (board.player_b_id) alreadySeated.add(board.player_b_id);
+    seated.add(board.player_a_id);
+    if (board.player_b_id) seated.add(board.player_b_id);
   }
-  if (alreadySeated.has(whiteId) || (!isBye && alreadySeated.has(blackId))) {
-    backToOfficer("Someone in that board already has a game this round.");
+  if (seated.has(playerAId) || (!isBye && seated.has(playerBId))) {
+    backToOfficer("Someone in that matchup already has a game this round.");
   }
 
-  const nextBoard =
-    boards.reduce((max, b) => Math.max(max, b.board_number), 0) + 1;
+  const { data: pairing, error } = await supabase
+    .from("pairings")
+    .insert({
+      round_id: roundId,
+      board_number: boards.reduce((max, b) => Math.max(max, b.board_number), 0) + 1,
+      player_a_id: playerAId,
+      player_b_id: isBye ? null : playerBId,
+    })
+    .select()
+    .single();
+  if (error || !pairing) {
+    backToOfficer(error?.message ?? "Could not add the matchup.");
+  }
 
-  const { error } = await supabase.from("pairings").insert({
-    round_id: roundId,
-    board_number: nextBoard,
-    player_a_id: whiteId,
-    player_b_id: isBye ? null : blackId,
-    color_a: isBye ? null : ("white" as const),
-    color_b: isBye ? null : ("black" as const),
-    // A bye is already decided; it is never an outstanding result.
-    result: isBye ? ("a_win" as const) : (result as (typeof outcomes)[number]),
-  });
-  if (error) backToOfficer(error.message);
+  if (!isBye) {
+    const { error: gamesError } = await createGames(supabase, pairing.id);
+    if (gamesError) backToOfficer(gamesError.message);
+  }
 
-  await supabase
-    .from("rounds")
-    .update({ status: "in_progress" })
-    .eq("id", roundId);
+  await supabase.from("rounds").update({ status: "in_progress" }).eq("id", roundId);
 
   revalidatePath("/officer");
+  revalidatePath("/arbiter");
   revalidatePath("/standings");
-  revalidatePath("/");
+  revalidatePath("/results");
   backToOfficer();
 }
 
-export async function deletePairing(formData: FormData) {
+export async function deleteMatchup(formData: FormData) {
   await assertOfficer();
   const pairingId = String(formData.get("pairingId") ?? "");
-  if (!pairingId) backToOfficer("Missing board.");
+  if (!pairingId) backToOfficer("Missing matchup.");
 
+  // Games cascade with the matchup.
   const supabase = createAdminClient();
   const { error } = await supabase.from("pairings").delete().eq("id", pairingId);
   if (error) backToOfficer(error.message);
 
   revalidatePath("/officer");
   revalidatePath("/standings");
-  revalidatePath("/");
+  revalidatePath("/results");
   backToOfficer();
 }
 
@@ -331,39 +373,72 @@ export async function clearPairings(formData: FormData) {
   await supabase.from("rounds").update({ status: "pending" }).eq("id", roundId);
 
   revalidatePath("/officer");
+  revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/results");
   backToOfficer();
 }
 
-export async function recordResult(formData: FormData) {
-  await assertOfficer();
-  const pairingId = String(formData.get("pairingId") ?? "");
-  const result = String(formData.get("result") ?? "");
+// ---------------------------------------------------------------------------
+// Game results — officers and arbiters
+// ---------------------------------------------------------------------------
 
-  const allowed = [
-    "pending",
-    "a_win",
-    "b_win",
-    "draw",
-    "a_forfeit_win",
-    "b_forfeit_win",
-    "double_forfeit",
-  ] as const;
-  if (!pairingId || !allowed.includes(result as (typeof allowed)[number])) {
-    backToOfficer("That is not a valid result.");
+export async function recordGame(formData: FormData) {
+  const role = await assertCanEnterResults();
+  const gameId = String(formData.get("gameId") ?? "");
+  const result = String(formData.get("result") ?? "");
+  const returnTo = safePath(formData.get("returnTo"), "/officer");
+
+  if (!gameId || !RESULTS.includes(result as DbPairingResult)) {
+    backTo(returnTo, "That is not a valid result.");
   }
 
   const supabase = createAdminClient();
   const { error } = await supabase
-    .from("pairings")
-    .update({ result: result as (typeof allowed)[number] })
-    .eq("id", pairingId);
-  if (error) backToOfficer(error.message);
+    .from("games")
+    .update({
+      result: result as DbPairingResult,
+      updated_by: role,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", gameId);
+  if (error) backTo(returnTo, error.message);
 
+  revalidatePath(returnTo);
   revalidatePath("/officer");
+  revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/results");
   revalidatePath("/");
-  backToOfficer();
+  backTo(returnTo);
+}
+
+/** Record which pieces player A had in one game. */
+export async function setGameColor(formData: FormData) {
+  const role = await assertCanEnterResults();
+  const gameId = String(formData.get("gameId") ?? "");
+  const color = String(formData.get("colorA") ?? "");
+  const returnTo = safePath(formData.get("returnTo"), "/officer");
+
+  if (!gameId || (color !== "white" && color !== "black" && color !== "")) {
+    backTo(returnTo, "That is not a valid colour.");
+  }
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("games")
+    .update({
+      color_a: color === "" ? null : (color as DbPieceColor),
+      updated_by: role,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", gameId);
+  if (error) backTo(returnTo, error.message);
+
+  revalidatePath(returnTo);
+  revalidatePath("/standings");
+  revalidatePath("/results");
+  backTo(returnTo);
 }
 
 export async function completeRound(formData: FormData) {
@@ -372,30 +447,36 @@ export async function completeRound(formData: FormData) {
   if (!roundId) backToOfficer("Missing round.");
 
   const supabase = createAdminClient();
-  const { data: boards } = await supabase
+  const { data: pairings } = await supabase
     .from("pairings")
-    .select("id, result")
+    .select("id")
     .eq("round_id", roundId);
 
-  if (!boards || boards.length === 0) {
-    backToOfficer("This round has no pairings yet.");
+  if (!pairings || pairings.length === 0) {
+    backToOfficer("This round has no matchups yet.");
   }
 
-  const unplayed = boards.filter((b) => b.result === "pending");
+  const pairingIds = pairings.map((p) => p.id);
+  const { data: games } = await supabase
+    .from("games")
+    .select("id, result")
+    .in("pairing_id", pairingIds);
+
+  const unplayed = (games ?? []).filter((g) => g.result === "pending");
   if (unplayed.length > 0) {
     if (String(formData.get("forfeitUnplayed") ?? "") !== "true") {
       backToOfficer(
-        `${unplayed.length} ${unplayed.length === 1 ? "board has" : "boards have"} no result yet. Enter them, or close the round forfeiting them.`,
+        `${unplayed.length} ${unplayed.length === 1 ? "game has" : "games have"} no result yet. Enter them, or close the round forfeiting them.`,
       );
     }
 
     // A game nobody completed is a double forfeit: neither player scores.
-    const { error: forfeitError } = await supabase
-      .from("pairings")
-      .update({ result: "double_forfeit" })
-      .eq("round_id", roundId)
+    const { error } = await supabase
+      .from("games")
+      .update({ result: "double_forfeit", updated_by: "officer" })
+      .in("pairing_id", pairingIds)
       .eq("result", "pending");
-    if (forfeitError) backToOfficer(forfeitError.message);
+    if (error) backToOfficer(error.message);
   }
 
   const { error } = await supabase
@@ -405,7 +486,9 @@ export async function completeRound(formData: FormData) {
   if (error) backToOfficer(error.message);
 
   revalidatePath("/officer");
+  revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/results");
   revalidatePath("/");
   backToOfficer();
 }

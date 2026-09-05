@@ -5,14 +5,21 @@ Swiss event; one club meeting is one round.
 
 Next.js (App Router) · TypeScript · Tailwind · Supabase · Vercel.
 
-## How access works
+## How it works
 
-There are no accounts. Anyone can read the standings; officers unlock the round
-tools with a shared passcode.
+A round pairs every active player into a **matchup**: three games against the
+same opponent. The season is scored on **game points**, so a matchup ending 2-1
+is worth 2 to the winner and 1 to the loser.
+
+There are no accounts, just two shared passcodes.
 
 - **Everyone** — standings and results, no sign-in.
-- **Officers** — enter the passcode once, then manage the roster, run rounds and
-  enter results. The cookie lasts 30 days per device.
+- **Arbiters** — one screen: the open round's matchups, where they report game
+  results and forfeits. No roster, no pairing, no past rounds.
+- **Officers** — everything: roster, seasons, pairing, closing rounds.
+
+Both cookies last 30 days per device. Changing a passcode signs everyone out of
+that role.
 
 Players are roster entries officers add by name. Nobody logs in as a player, so
 nothing depends on Google, a school Workspace, or sending email.
@@ -36,9 +43,10 @@ Vercel deployment. No Google Cloud, no OAuth, no SMTP.
 
 Then apply the schema. Open **SQL Editor → New query**, paste the whole of
 [`supabase/migrations/0003_public_site.sql`](supabase/migrations/0003_public_site.sql)
-and run it, then run
-[`supabase/migrations/0004_forfeits.sql`](supabase/migrations/0004_forfeits.sql)
-as a second query.
+and run it, then
+[`0004_forfeits.sql`](supabase/migrations/0004_forfeits.sql) and
+[`0005_matchup_games.sql`](supabase/migrations/0005_matchup_games.sql), each as
+its own query, in order.
 
 `0003` is self-contained: on a fresh project it is the only migration you
 need. If you already ran `0001` and `0002` from the earlier account-based
@@ -65,9 +73,10 @@ Open <http://localhost:3000>.
 1. Go to **Officers** and enter your passcode.
 2. Add the club to the **Roster** by name. This works with or without a season.
 3. **Start season** — name it for the term or year.
-4. **Start round 1**, then **Generate pairings**. Every active player is
+4. **Start round 1**, then **Generate matchups**. Every active player is
    paired — there is no check-in step.
-5. Enter results as boards finish, then **Close round**.
+5. Open a matchup to record who had White in each game and how it finished.
+6. When every game is in, **Close round**.
 
 ### Catching up on meetings already played
 
@@ -78,11 +87,11 @@ will start from nothing.
 For each past meeting, in order:
 
 1. **Start round**, setting **Date played** to when it actually happened.
-2. Under **Add a board by hand**, enter each game: who had White, who had Black,
-   and the result. Choose *No opponent (bye)* for anyone who sat out with a point.
+2. Under **Add a matchup by hand**, pick the two players — or *No opponent (bye)*
+   — then open the matchup and fill in its games.
 3. **Close round**, then repeat for the next meeting.
 
-Do not press *Generate pairings* on a backfilled round — that is for rounds the
+Do not press *Generate matchups* on a backfilled round — that is for rounds the
 site is pairing itself. Once your history is in, the next meeting can be paired
 normally and it will take all of it into account.
 
@@ -125,7 +134,9 @@ those games count toward other players' tiebreaks.
 
 ### Results
 
-Each board takes one of six results:
+Open a matchup to report its three games. Each game records who had White —
+colours are decided at the board, not by the pairing engine — and takes one of
+six results:
 
 | Button | Meaning |
 | --- | --- |
@@ -136,8 +147,12 @@ Each board takes one of six results:
 
 A forfeit scores like a real result — a win is still a full point — but it was
 never played, so it is left out of games played and out of **both tiebreaks**.
-That stops a no-show quietly inflating whoever benefited from it. Byes work the
-same way.
+That stops a no-show quietly inflating whoever benefited from it.
+
+A bye is worth a whole matchup, so sitting out costs nothing against the players
+who won theirs. Its value follows the round: three points in a three-game round,
+one in a round recorded as a single game. Like a forfeit, it contributes nothing
+to either tiebreak.
 
 Closing a round with games still unreported offers to forfeit them all as
 `− −`, matching the rule that a game not completed by the end of the round is
@@ -156,13 +171,15 @@ permanent `pairing_number` the first time they play.
 
 Every later round:
 
-1. Group players by cumulative season score (win 1, draw ½, loss 0, bye 1).
+1. Group players by cumulative season score in game points (win 1, draw ½,
+   loss 0 per game; a bye is worth a whole matchup).
 2. Sort each group by `pairing_number`.
 3. Fold the top half onto the bottom half — 1st plays the middle player, and so on.
 4. Repair the result so nobody replays an opponent, floating players into the
    neighbouring score group where necessary.
-5. Assign colours, alternating from each player's previous round and keeping
-   everyone's White/Black counts as level as possible.
+5. Prefer pairings whose colour needs complement, using the colours actually
+   recorded so far. Colours themselves are entered per game by whoever reports
+   the result.
 6. If the field is odd, the bye goes to the lowest scorer who has not had one.
 
 Two players who were paired count as having met even if the game was forfeited,
@@ -188,10 +205,15 @@ Row level security allows `select` and nothing else — there are no insert,
 update or delete policies anywhere, deliberately. So even though the anon key is
 visible in the page source, it cannot change anything.
 
-Every write happens in a server action that checks the officer passcode and then
-uses the service role key, which stays on the server and never reaches the
-browser. The officer cookie holds an HMAC derived from the passcode rather than
-the passcode itself, so changing `OFFICER_PASSCODE` signs everyone out.
+Every write happens in a server action that checks a passcode and then uses the
+service role key, which stays on the server and never reaches the browser.
+Officer-only actions check for the officer role specifically; reporting results
+accepts either role. The cookie holds an HMAC derived from the passcode rather
+than the passcode itself, so changing a passcode signs everyone out of that role.
+
+Each game records which role last changed it, so a disputed result can be traced
+back. That cannot be reconstructed after the fact, which is why it is stored as
+it happens.
 
 ## Development
 

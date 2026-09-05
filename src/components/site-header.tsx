@@ -1,18 +1,21 @@
 import Link from "next/link";
-import { lockOfficer } from "@/lib/club/actions";
+import { lockRole } from "@/lib/club/actions";
+import type { ClubRole } from "@/lib/officer/session";
 import { Wordmark } from "./wordmark";
 
 export function SiteHeader({
-  isOfficer,
+  role,
   currentPath,
 }: {
-  isOfficer: boolean;
+  role: ClubRole | null;
   currentPath: string;
 }) {
   const links = [
     { href: "/standings", label: "Standings" },
     { href: "/results", label: "Results" },
-    { href: "/officer", label: isOfficer ? "Run a round" : "Officers" },
+    role === "arbiter"
+      ? { href: "/arbiter", label: "Report results" }
+      : { href: "/officer", label: role === "officer" ? "Run a round" : "Officers" },
   ];
 
   return (
@@ -44,13 +47,13 @@ export function SiteHeader({
           })}
         </nav>
 
-        {isOfficer ? (
-          <form action={lockOfficer} className="ml-auto">
+        {role ? (
+          <form action={lockRole} className="ml-auto">
             <button
               type="submit"
               className="text-faint text-sm transition-colors hover:text-ink"
             >
-              Lock officer tools
+              Lock {role} tools
             </button>
           </form>
         ) : null}

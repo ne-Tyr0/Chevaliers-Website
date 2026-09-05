@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { formatMatchupScore } from "@/components/matchup-games";
 import { Pawn } from "@/components/pawn";
 import { PlayerCard } from "@/components/player-card";
 import { SiteHeader } from "@/components/site-header";
@@ -9,11 +10,11 @@ import {
   getSeasonHistory,
   seasonParticipants,
   toPlayerInputs,
+  type MatchupView,
 } from "@/lib/club/queries";
-import { isOfficer } from "@/lib/officer/session";
-import { computeStandings, gameRecordsByPlayer } from "@/lib/swiss";
+import { currentRole } from "@/lib/officer/session";
+import { computeStandings, playerHistory } from "@/lib/swiss";
 import type { GameRecord, StandingRow } from "@/lib/swiss";
-import type { PairingRow } from "@/lib/supabase/database.types";
 
 export const metadata: Metadata = { title: "Pairings & results" };
 
@@ -33,23 +34,23 @@ const RESULT_HINT: Record<string, string> = {
   a_win: "White won",
   b_win: "Black won",
   draw: "Draw",
-  a_forfeit_win: "White won by default",
-  b_forfeit_win: "Black won by default",
+  a_forfeit_win: "Won by default",
+  b_forfeit_win: "Lost by default",
   double_forfeit: "Neither player appeared",
 };
 
 export default async function ResultsPage() {
-  const [officer, season] = await Promise.all([isOfficer(), getActiveSeason()]);
+  const [role, season] = await Promise.all([currentRole(), getActiveSeason()]);
 
   if (!season) {
     return (
       <>
-        <SiteHeader isOfficer={officer} currentPath="/results" />
+        <SiteHeader role={role} currentPath="/results" />
         <main className="mx-auto max-w-5xl px-6 py-20">
           <h1 className="text-4xl">Pairings &amp; results</h1>
           <Empty>
             No season is running yet. Once an officer starts one and pairs the
-            first round, every board appears here.
+            first round, every matchup appears here.
           </Empty>
         </main>
       </>
@@ -62,10 +63,11 @@ export default async function ResultsPage() {
   ]);
 
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
-  const gamesByPlayer = gameRecordsByPlayer(history.completed);
+  const byPlayer = playerHistory(history.matchups);
+  const gamesByPlayer = new Map([...byPlayer].map(([id, e]) => [id, e.games]));
   const standings = computeStandings(
-    toPlayerInputs(seasonParticipants(roster, history.allPairings)),
-    history.completed,
+    toPlayerInputs(seasonParticipants(roster, history.matchupViews)),
+    history.matchups,
   );
   const rowById = new Map(standings.map((row) => [row.playerId, row]));
 
@@ -75,22 +77,21 @@ export default async function ResultsPage() {
     .sort((a, b) => b.round_number - a.round_number)
     .map((round) => ({
       round,
-      boards: history.allPairings
-        .filter((p) => p.round_id === round.id)
-        .sort((a, b) => a.board_number - b.board_number),
+      matchups: history.matchupViews.filter((v) => v.pairing.round_id === round.id),
     }))
-    .filter((entry) => entry.boards.length > 0);
+    .filter((entry) => entry.matchups.length > 0);
 
   return (
     <>
-      <SiteHeader isOfficer={officer} currentPath="/results" />
+      <SiteHeader role={role} currentPath="/results" />
 
       <main className="mx-auto max-w-5xl px-6 py-16">
         <p className="label">{season.name}</p>
         <h1 className="mt-3 text-4xl">Pairings &amp; results</h1>
         <p className="text-muted mt-3 text-sm">
-          Every board of the season, most recent first. Hover or tap a name for
-          that player&rsquo;s record.
+          Every matchup of the season, most recent first. Each is three games, so
+          the score shown is the matchup total. Open one to see the games, or
+          hover a name for that player&rsquo;s record.
         </p>
 
         {rounds.length === 0 ? (
@@ -100,7 +101,7 @@ export default async function ResultsPage() {
           </Empty>
         ) : (
           <div className="mt-12 space-y-12">
-            {rounds.map(({ round, boards }) => (
+            {rounds.map(({ round, matchups }) => (
               <section key={round.id}>
                 <div
                   className="flex items-baseline justify-between gap-4 border-b pb-2"
@@ -114,10 +115,10 @@ export default async function ResultsPage() {
                 </div>
 
                 <ul>
-                  {boards.map((board) => (
-                    <Board
-                      key={board.id}
-                      board={board}
+                  {matchups.map((view) => (
+                    <Matchup
+                      key={view.pairing.id}
+                      view={view}
                       nameById={nameById}
                       rowById={rowById}
                       gamesByPlayer={gamesByPlayer}
@@ -133,62 +134,105 @@ export default async function ResultsPage() {
   );
 }
 
-function Board({
-  board,
+function Matchup({
+  view,
   nameById,
   rowById,
   gamesByPlayer,
 }: {
-  board: PairingRow;
+  view: MatchupView;
   nameById: ReadonlyMap<string, string>;
   rowById: ReadonlyMap<string, StandingRow>;
   gamesByPlayer: ReadonlyMap<string, GameRecord[]>;
 }) {
-  const isBye = board.player_b_id === null;
+  const isBye = view.pairing.player_b_id === null;
+  const nameA = nameById.get(view.pairing.player_a_id) ?? "Unknown player";
+  const nameB = view.pairing.player_b_id
+    ? (nameById.get(view.pairing.player_b_id) ?? "Unknown player")
+    : null;
 
-  return (
-    <li
-      className="grid grid-cols-[2rem_1fr_auto_1fr] items-center gap-3 border-b py-3 text-sm"
-      style={{ borderColor: "var(--rule)" }}
-    >
+  const header = (
+    <div className="grid grid-cols-[2rem_1fr_auto_1fr] items-center gap-3 text-sm">
       <span className="text-faint" data-numeric>
-        {board.board_number}
+        {view.pairing.board_number}
       </span>
-
       <span className="min-w-0">
         <Name
-          id={board.player_a_id}
+          id={view.pairing.player_a_id}
           nameById={nameById}
           rowById={rowById}
           gamesByPlayer={gamesByPlayer}
         />
       </span>
-
-      <span
-        className="text-center tabular-nums whitespace-nowrap"
-        title={isBye ? "Bye, worth one point" : RESULT_HINT[board.result]}
-      >
+      <span className="text-center tabular-nums whitespace-nowrap">
         {isBye ? (
           <span className="text-muted text-xs">bye</span>
         ) : (
-          <span className={board.result === "pending" ? "text-faint" : ""}>
-            {RESULT_LABEL[board.result] ?? board.result}
-          </span>
+          formatMatchupScore(view)
         )}
       </span>
-
       <span className="min-w-0">
         {isBye ? (
           <span className="text-faint text-xs">—</span>
         ) : (
           <Name
-            id={board.player_b_id!}
+            id={view.pairing.player_b_id!}
             nameById={nameById}
             rowById={rowById}
             gamesByPlayer={gamesByPlayer}
           />
         )}
       </span>
+    </div>
+  );
+
+  if (isBye || view.games.length === 0) {
+    return (
+      <li className="border-b py-3" style={{ borderColor: "var(--rule)" }}>
+        {header}
+      </li>
+    );
+  }
+
+  return (
+    <li className="border-b" style={{ borderColor: "var(--rule)" }}>
+      <details className="group">
+        <summary className="cursor-pointer list-none py-3">
+          {header}
+          <span className="text-faint mt-1 block pl-11 text-xs group-open:hidden">
+            Show games
+          </span>
+        </summary>
+
+        <ul
+          className="mb-3 ml-11 border-l pl-4"
+          style={{ borderColor: "var(--rule)" }}
+        >
+          {view.games.map((game) => (
+            <li
+              key={game.id}
+              className="flex items-center gap-3 py-1.5 text-xs"
+              title={RESULT_HINT[game.result]}
+            >
+              <span className="text-faint w-14">Game {game.game_number}</span>
+              <span className="text-muted min-w-0 flex-1 truncate">
+                {game.color_a === "white"
+                  ? `${nameA} as White`
+                  : game.color_a === "black"
+                    ? `${nameB} as White`
+                    : "Colours not recorded"}
+              </span>
+              <span
+                className={
+                  game.result === "pending" ? "text-faint tabular-nums" : "tabular-nums"
+                }
+              >
+                {RESULT_LABEL[game.result] ?? game.result}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
     </li>
   );
 }

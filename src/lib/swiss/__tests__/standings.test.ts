@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { computeStandings } from "../standings";
-import { CompletedPairing } from "../state";
+import type { CompletedMatchup } from "../state";
+
+/** A one-game matchup, matching how rounds were recorded before three-game play. */
+function single(
+  roundNumber: number,
+  playerAId: string,
+  playerBId: string | null,
+  colorA: "white" | "black" | null,
+  result?: CompletedMatchup["games"][number]["result"],
+): CompletedMatchup {
+  return {
+    roundNumber,
+    playerAId,
+    playerBId,
+    games:
+      playerBId === null || !result
+        ? []
+        : [{ gameNumber: 1, colorA, result }],
+  };
+}
 
 const profiles = [
   { id: "ana", pairingNumber: 30 },
@@ -16,39 +35,11 @@ const profiles = [
  *
  * Final scores — ana 1.5, bo 1.0 (bye only), cy 1.5.
  */
-const season: CompletedPairing[] = [
-  {
-    roundNumber: 1,
-    playerAId: "ana",
-    playerBId: "bo",
-    colorA: "white",
-    colorB: "black",
-    result: "a_win",
-  },
-  {
-    roundNumber: 1,
-    playerAId: "cy",
-    playerBId: null,
-    colorA: null,
-    colorB: null,
-    result: "a_win",
-  },
-  {
-    roundNumber: 2,
-    playerAId: "ana",
-    playerBId: "cy",
-    colorA: "black",
-    colorB: "white",
-    result: "draw",
-  },
-  {
-    roundNumber: 2,
-    playerAId: "bo",
-    playerBId: null,
-    colorA: null,
-    colorB: null,
-    result: "a_win",
-  },
+const season: CompletedMatchup[] = [
+  single(1, "ana", "bo", "white", "a_win"),
+  single(1, "cy", null, null),
+  single(2, "ana", "cy", "black", "draw"),
+  single(2, "bo", null, null),
 ];
 
 describe("computeStandings", () => {
@@ -102,14 +93,7 @@ describe("computeStandings", () => {
         { id: "y", pairingNumber: 2 },
       ],
       [
-        {
-          roundNumber: 1,
-          playerAId: "x",
-          playerBId: "y",
-          colorA: "white",
-          colorB: "black",
-          result: "draw",
-        },
+        single(1, "x", "y", "white", "draw"),
       ],
     );
     expect(tied.map((r) => r.rank)).toEqual([1, 1]);
@@ -146,31 +130,10 @@ describe("forfeits", () => {
    * ana beats bo over the board, then wins by forfeit against cy.
    * dee and cy double-forfeit, so neither scores.
    */
-  const games: CompletedPairing[] = [
-    {
-      roundNumber: 1,
-      playerAId: "ana",
-      playerBId: "bo",
-      colorA: "white",
-      colorB: "black",
-      result: "a_win",
-    },
-    {
-      roundNumber: 2,
-      playerAId: "ana",
-      playerBId: "cy",
-      colorA: "black",
-      colorB: "white",
-      result: "a_forfeit_win",
-    },
-    {
-      roundNumber: 2,
-      playerAId: "dee",
-      playerBId: "bo",
-      colorA: "white",
-      colorB: "black",
-      result: "double_forfeit",
-    },
+  const games: CompletedMatchup[] = [
+    single(1, "ana", "bo", "white", "a_win"),
+    single(2, "ana", "cy", "black", "a_forfeit_win"),
+    single(2, "dee", "bo", "white", "double_forfeit"),
   ];
 
   const rows = computeStandings(roster, games);
@@ -228,30 +191,9 @@ describe("forfeits", () => {
         { id: "absent", pairingNumber: 4 },
       ],
       [
-        {
-          roundNumber: 1,
-          playerAId: "played",
-          playerBId: "strong",
-          colorA: "white",
-          colorB: "black",
-          result: "a_win",
-        },
-        {
-          roundNumber: 1,
-          playerAId: "walkover",
-          playerBId: "absent",
-          colorA: "white",
-          colorB: "black",
-          result: "a_forfeit_win",
-        },
-        {
-          roundNumber: 2,
-          playerAId: "strong",
-          playerBId: "absent",
-          colorA: "white",
-          colorB: "black",
-          result: "a_win",
-        },
+        single(1, "played", "strong", "white", "a_win"),
+        single(1, "walkover", "absent", "white", "a_forfeit_win"),
+        single(2, "strong", "absent", "white", "a_win"),
       ],
     );
 
