@@ -109,14 +109,16 @@ create unique index pairings_one_board_per_opponent_per_round
 -- New sign-ups get a profile automatically
 -- ---------------------------------------------------------------------------
 
--- The domain sign-ups are restricted to. Set once per project, before anyone
--- signs in:
+-- The domain sign-ups are restricted to.
 --
---   alter database postgres set app.allowed_email_domain = 'your-school.edu';
+-- SUPERSEDED BY 0002: this version reads a database-level setting, which
+-- Supabase does not permit you to set. 0002 replaces this function with one
+-- that reads `club_settings` instead. Run both migrations, in order.
 --
--- The application checks this too, via ALLOWED_EMAIL_DOMAIN. It is repeated
--- here because the check has to hold even if someone reaches Supabase without
--- going through the app: without a profile row an account can read nothing.
+-- The application checks the domain too, via ALLOWED_EMAIL_DOMAIN. It is
+-- repeated here because the check has to hold even if someone reaches Supabase
+-- without going through the app: without a profile row an account can read
+-- nothing.
 create or replace function public.allowed_email_domain()
 returns text
 language sql

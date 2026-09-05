@@ -23,20 +23,24 @@ nothing about them changes the local setup.
 3. Go to **Project Settings → API Keys** and copy the **anon / public** key and
    the **service_role** key.
 
-Then apply the schema. Open **SQL Editor → New query**, paste the whole of
-[`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), and run
-it.
+Then apply the schema. Open **SQL Editor → New query** and run the two
+migrations in order, each as its own query:
 
-Finally, tell the database which email domain is allowed. Run this as a second
-query, replacing the domain with the school's:
+1. [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) —
+   tables, row level security and the sign-up trigger.
+2. [`supabase/migrations/0002_club_settings.sql`](supabase/migrations/0002_club_settings.sql)
+   — records which email domain may sign in. The domain is already set to
+   `cvisc.pshs.edu.ph`; edit that line before running if it ever changes.
+
+Both are required. Sign-in fails with a clear error until 0002 has run, because
+the app checks the domain but the database enforces it independently — an
+account that reaches Supabase without going through the site still gets nowhere.
+
+To change the domain later, no migration is needed:
 
 ```sql
-alter database postgres set app.allowed_email_domain = 'cvisc.pshs.edu.ph';
+update public.club_settings set email_domain = 'new-domain.edu', updated_at = now();
 ```
-
-This is required — sign-in fails with a clear error until it is set. The app
-checks the domain too, but the database enforces it independently so an account
-that reaches Supabase without going through the site still gets nowhere.
 
 ### 2. GitHub repo
 
