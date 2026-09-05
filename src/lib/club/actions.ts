@@ -1,0 +1,277 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import {
+  buildPlayerStates,
+  PairingError,
+  pairRound,
+  type CompletedPairing,
+} from "@/lib/swiss";
+import { getActiveSeason, getSeasonHistory, getViewer } from "./queries";
+
+/** Upper bound for the placeholder pairing number. Wide enough that ties are rare. */
+const PAIRING_NUMBER_RANGE = 1_000_000;
+
+async function requireOfficer() {
+  const viewer = await getViewer();
+  if (!viewer?.isOfficer) {
+    redirect("/?error=officers_only");
+  }
+  return viewer;
+}
+
+function backToOfficer(error?: string): never {
+  redirect(error ? `/officer?error=${encodeURIComponent(error)}` : "/officer");
+}
+
+export async function createSeason(formData: FormData) {
+  await requireOfficer();
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) backToOfficer("A season needs a name.");
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("seasons").insert({ name, status: "active" });
+  if (error) backToOfficer(error.message);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  backToOfficer();
+}
+
+/**
+ * Open the next round of the active season.
+ *
+ * Refuses while an earlier round still has unplayed boards — pairing the next
+ * round from an incomplete one would use the wrong scores.
+ */
+export async function startRound() {
+  await requireOfficer();
+  const season = await getActiveSeason();
+  if (!season) backToOfficer("There is no active season yet.");
+
+  const { rounds, allPairings } = await getSeasonHistory(season.id);
+
+  const unfinished = rounds.find((round) => {
+    const boards = allPairings.filter((p) => p.round_id === round.id);
+    return boards.length > 0 && boards.some((p) => p.result === "pending");
+  });
+  if (unfinished) {
+    backToOfficer(
+      `Round ${unfinished.round_number} still has results outstanding. Enter them before starting a new round.`,
+    );
+  }
+
+  const emptyRound = rounds.find(
+    (round) => !allPairings.some((p) => p.round_id === round.id),
+  );
+  if (emptyRound) {
+    backToOfficer(
+      `Round ${emptyRound.round_number} is already open and has no pairings yet.`,
+    );
+  }
+
+  const nextNumber = rounds.reduce((max, r) => Math.max(max, r.round_number), 0) + 1;
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("rounds").insert({
+    season_id: season.id,
+    round_number: nextNumber,
+    status: "pending",
+  });
+  if (error) backToOfficer(error.message);
+
+  revalidatePath("/officer");
+  backToOfficer();
+}
+
+export async function setCheckIn(formData: FormData) {
+  await requireOfficer();
+  const roundId = String(formData.get("roundId") ?? "");
+  const playerId = String(formData.get("playerId") ?? "");
+  const present = String(formData.get("present") ?? "") === "true";
+  if (!roundId || !playerId) backToOfficer("Missing round or player.");
+
+  const supabase = await createClient();
+  const { error } = present
+    ? await supabase
+        .from("round_check_ins")
+        .upsert({ round_id: roundId, player_id: playerId })
+    : await supabase
+        .from("round_check_ins")
+        .delete()
+        .eq("round_id", roundId)
+        .eq("player_id", playerId);
+
+  if (error) backToOfficer(error.message);
+
+  revalidatePath("/officer");
+  backToOfficer();
+}
+
+/**
+ * Pair the checked-in players for a round and write the boards.
+ *
+ * Anyone playing their first ever game gets a `pairing_number` here — it is
+ * assigned once and then kept for the rest of their time at the club.
+ */
+export async function generatePairings(formData: FormData) {
+  await requireOfficer();
+  const roundId = String(formData.get("roundId") ?? "");
+  if (!roundId) backToOfficer("Missing round.");
+
+  const supabase = await createClient();
+  const season = await getActiveSeason();
+  if (!season) backToOfficer("There is no active season.");
+
+  const { rounds, completed, allPairings } = await getSeasonHistory(season.id);
+  const round = rounds.find((r) => r.id === roundId);
+  if (!round) backToOfficer("That round is not part of the active season.");
+
+  if (allPairings.some((p) => p.round_id === roundId)) {
+    backToOfficer(
+      `Round ${round.round_number} already has pairings. Clear them before regenerating.`,
+    );
+  }
+
+  const { data: checkIns } = await supabase
+    .from("round_check_ins")
+    .select("player_id")
+    .eq("round_id", roundId);
+
+  const checkedInIds = (checkIns ?? []).map((row) => row.player_id);
+  if (checkedInIds.length === 0) {
+    backToOfficer("Nobody is checked in for this round yet.");
+  }
+
+  const { data: players } = await supabase
+    .from("profiles")
+    .select("*")
+    .in("id", checkedInIds);
+
+  if (!players || players.length !== checkedInIds.length) {
+    backToOfficer("Could not load every checked-in player.");
+  }
+
+  // First game ever: give them their persistent pairing number.
+  const needsNumber = players.filter((p) => p.pairing_number === null);
+  for (const player of needsNumber) {
+    const pairingNumber = 1 + Math.floor(Math.random() * PAIRING_NUMBER_RANGE);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ pairing_number: pairingNumber })
+      .eq("id", player.id);
+    if (error) backToOfficer(`Could not assign a pairing number: ${error.message}`);
+    player.pairing_number = pairingNumber;
+  }
+
+  const priorRounds: CompletedPairing[] = completed.filter(
+    (p) => p.roundNumber < round.round_number,
+  );
+
+  const states = buildPlayerStates(
+    players.map((p) => ({ id: p.id, pairingNumber: p.pairing_number ?? 0 })),
+    priorRounds,
+  );
+
+  let outcome;
+  try {
+    outcome = pairRound(states, { roundNumber: round.round_number });
+  } catch (cause) {
+    backToOfficer(
+      cause instanceof PairingError
+        ? cause.message
+        : "Could not pair this round. Please report this.",
+    );
+  }
+
+  const { error: insertError } = await supabase.from("pairings").insert(
+    outcome.pairings.map((pairing) => ({
+      round_id: roundId,
+      board_number: pairing.boardNumber,
+      player_a_id: pairing.playerAId,
+      player_b_id: pairing.playerBId,
+      color_a: pairing.colorA,
+      color_b: pairing.colorB,
+      // A bye is a completed point the moment it is assigned; there is no game
+      // to play, so it must not sit in the round as an outstanding result.
+      result: pairing.playerBId === null ? ("a_win" as const) : ("pending" as const),
+      is_rematch: pairing.isRematch,
+    })),
+  );
+  if (insertError) backToOfficer(insertError.message);
+
+  await supabase.from("rounds").update({ status: "in_progress" }).eq("id", roundId);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  backToOfficer();
+}
+
+export async function clearPairings(formData: FormData) {
+  await requireOfficer();
+  const roundId = String(formData.get("roundId") ?? "");
+  if (!roundId) backToOfficer("Missing round.");
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("pairings").delete().eq("round_id", roundId);
+  if (error) backToOfficer(error.message);
+
+  await supabase.from("rounds").update({ status: "pending" }).eq("id", roundId);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  backToOfficer();
+}
+
+export async function recordResult(formData: FormData) {
+  await requireOfficer();
+  const pairingId = String(formData.get("pairingId") ?? "");
+  const result = String(formData.get("result") ?? "");
+
+  const allowed = ["pending", "a_win", "b_win", "draw"] as const;
+  if (!pairingId || !allowed.includes(result as (typeof allowed)[number])) {
+    backToOfficer("That is not a valid result.");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("pairings")
+    .update({ result: result as (typeof allowed)[number] })
+    .eq("id", pairingId);
+  if (error) backToOfficer(error.message);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  backToOfficer();
+}
+
+export async function completeRound(formData: FormData) {
+  await requireOfficer();
+  const roundId = String(formData.get("roundId") ?? "");
+  if (!roundId) backToOfficer("Missing round.");
+
+  const supabase = await createClient();
+  const { data: boards } = await supabase
+    .from("pairings")
+    .select("result")
+    .eq("round_id", roundId);
+
+  if (!boards || boards.length === 0) {
+    backToOfficer("This round has no pairings yet.");
+  }
+  if (boards.some((b) => b.result === "pending")) {
+    backToOfficer("Every board needs a result before the round can be closed.");
+  }
+
+  const { error } = await supabase
+    .from("rounds")
+    .update({ status: "completed" })
+    .eq("id", roundId);
+  if (error) backToOfficer(error.message);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  backToOfficer();
+}

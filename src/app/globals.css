@@ -1,26 +1,88 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Chevaliers house style.
+ *
+ * Two colors carry the whole site: warm cream paper and near-black ink, taken
+ * from the logo. Everything else is those two at different strengths, which is
+ * what keeps the reading-room feel — no accent hues, no colored surfaces.
+ */
+@theme {
+  --color-cream: #f0ece0;
+  /* A half-step darker, for table stripes and inset panels. */
+  --color-cream-deep: #e8e3d4;
+  --color-ink: #241e20;
+
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: light;
+    /* Hairlines and muted text, expressed as ink at low strength so they always
+       sit correctly on the cream rather than being separate greys. */
+    --rule: color-mix(in srgb, var(--color-ink) 14%, transparent);
+    --rule-strong: color-mix(in srgb, var(--color-ink) 28%, transparent);
+    --ink-muted: color-mix(in srgb, var(--color-ink) 62%, transparent);
+    --ink-faint: color-mix(in srgb, var(--color-ink) 42%, transparent);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "kern", "liga";
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  /* Tabular figures everywhere numbers line up in a column: scores, board
+     numbers, tiebreaks. Proportional digits make a standings table ripple. */
+  th[data-numeric],
+  td[data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: var(--color-ink);
+    color: var(--color-cream);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .rule {
+    border-color: var(--rule);
+  }
+
+  .text-muted {
+    color: var(--ink-muted);
+  }
+
+  .text-faint {
+    color: var(--ink-faint);
+  }
+
+  /* Small caps label, used for column headers and section eyebrows. */
+  .label {
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
 }

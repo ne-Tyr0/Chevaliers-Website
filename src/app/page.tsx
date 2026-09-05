@@ -1,69 +1,77 @@
-import Image from "next/image";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Pawn } from "@/components/pawn";
+import { SiteHeader } from "@/components/site-header";
+import { Wordmark } from "@/components/wordmark";
+import { getActiveSeason, getSeasonHistory, getViewer } from "@/lib/club/queries";
 
-export default function Home() {
+export default async function HomePage() {
+  const viewer = await getViewer();
+  if (!viewer) redirect("/login");
+
+  const season = await getActiveSeason();
+  const history = season ? await getSeasonHistory(season.id) : null;
+  const roundsPlayed =
+    history?.rounds.filter((r) => r.status === "completed").length ?? 0;
+
+  const firstName = viewer.profile.full_name.split(" ")[0] || "there";
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <>
+      <SiteHeader isOfficer={viewer.isOfficer} currentPath="/" />
+
+      <main className="mx-auto max-w-5xl px-6 py-20">
+        <p className="label">Welcome back, {firstName}</p>
+        <h1 className="mt-4 text-5xl text-balance">
+          <Wordmark /> Chess Club
+        </h1>
+
+        {season ? (
+          <p className="text-muted mt-6 max-w-prose leading-relaxed">
+            {season.name} is under way — {roundsPlayed}{" "}
+            {roundsPlayed === 1 ? "round" : "rounds"} played so far. The season runs
+            as one continuous Swiss event, so every club meeting is a round and you
+            can join or miss a week without falling out of the standings.
+          </p>
+        ) : (
+          <p className="text-muted mt-6 max-w-prose leading-relaxed">
+            No season is running yet. An officer needs to start one before pairings
+            can be made.
+          </p>
+        )}
+
+        <div className="mt-10 flex flex-wrap gap-3">
+          <Link
+            href="/standings"
+            className="border px-5 py-2.5 text-sm transition-colors hover:bg-ink hover:text-cream"
+            style={{ borderColor: "var(--color-ink)" }}
+          >
+            View standings
+          </Link>
+          {viewer.isOfficer ? (
+            <Link
+              href="/officer"
+              className="text-muted border px-5 py-2.5 text-sm transition-colors hover:text-ink"
+              style={{ borderColor: "var(--rule-strong)" }}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+              Run a round
+            </Link>
+          ) : null}
+        </div>
+
+        <div
+          className="mt-20 flex items-start gap-4 border-t pt-8"
+          style={{ borderColor: "var(--rule)" }}
+        >
+          <Pawn className="text-faint mt-0.5 h-5 w-auto shrink-0" />
+          <p className="text-faint max-w-prose text-sm leading-relaxed">
+            Standings are ordered by score, then Buchholz, then Sonneborn-Berger.
+            Because attendance varies, games played is shown next to every score —
+            points alone are misleading when players have sat out different numbers
+            of rounds.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
       </main>
-    </div>
+    </>
   );
 }
