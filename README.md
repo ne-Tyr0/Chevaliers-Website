@@ -1,36 +1,149 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Chevaliers Chess Club
 
-## Getting Started
+Standings and Swiss pairings for a school chess club. One season is one ongoing
+Swiss event; one club meeting is one round.
 
-First, run the development server:
+Next.js (App Router) · TypeScript · Tailwind · Supabase · Vercel.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Setup
+
+You need the Supabase project, GitHub repo, Vercel connection and Google OAuth
+credentials to exist before the app will run. In order:
+
+### 1. Supabase project
+
+1. In your Supabase account, **New project**. Name it `chevaliers`, pick a region
+   near the school, and save the database password somewhere safe.
+2. Wait for it to finish provisioning, then go to **Project Settings → Data API**
+   and copy the **Project URL**.
+3. Go to **Project Settings → API Keys** and copy the **anon / public** key and
+   the **service_role** key.
+
+Then apply the schema. Open **SQL Editor → New query**, paste the whole of
+[`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), and run
+it.
+
+Finally, tell the database which email domain is allowed. Run this as a second
+query, replacing the domain with the school's:
+
+```sql
+alter database postgres set app.allowed_email_domain = 'your-school.edu';
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This is required — sign-in fails with a clear error until it is set. The app
+checks the domain too, but the database enforces it independently so an account
+that reaches Supabase without going through the site still gets nowhere.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 2. GitHub repo
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create a **new empty repo** in your GitHub account — no README, no
+   `.gitignore`, no licence, since this directory already has commits.
+2. Back here, connect and push:
 
-## Learn More
+```bash
+git remote add origin https://github.com/<your-username>/<repo-name>.git
+git push -u origin main
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 3. Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. In Vercel, **Add New → Project**, and import the repo you just pushed.
+2. Framework preset should detect **Next.js**. Leave the build settings alone.
+3. Before deploying, add the four environment variables from
+   [`.env.example`](.env.example) under **Environment Variables**. Set them for
+   Production, Preview and Development.
+4. Deploy. Note the production URL — you need it in the next step.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 4. Google OAuth
 
-## Deploy on Vercel
+1. In [Google Cloud Console](https://console.cloud.google.com), create a project
+   (or pick an existing one) → **APIs & Services → OAuth consent screen**.
+   - If the school has a Google Workspace, choose **Internal**. That restricts
+     sign-in to the school domain at Google's end, which is the strongest of the
+     three checks in this app.
+   - If not, choose **External** and add members as test users.
+2. **Credentials → Create credentials → OAuth client ID → Web application**.
+3. Under **Authorised redirect URIs**, add the callback from your Supabase
+   project — it is shown in Supabase under **Authentication → Providers →
+   Google**, and looks like:
+   `https://<project-ref>.supabase.co/auth/v1/callback`
+4. Copy the **Client ID** and **Client secret**.
+5. In Supabase, **Authentication → Providers → Google**: enable it, paste the ID
+   and secret, save.
+6. In Supabase, **Authentication → URL Configuration**, set **Site URL** to your
+   Vercel production URL, and add these to **Redirect URLs**:
+   - `https://<your-vercel-domain>/auth/callback`
+   - `http://localhost:3000/auth/callback`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 5. Local environment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+cp .env.example .env.local
+```
+
+Fill in the four values, then:
+
+```bash
+npm install
+npm run dev
+```
+
+### 6. Make yourself an officer
+
+Roles are not self-service. Sign in once so your profile row is created, then in
+Supabase go to **Table Editor → profiles**, find your row, and change `role` from
+`member` to `officer`.
+
+## Everyday use
+
+- **Members** see the standings.
+- **Officers** additionally get *Run a round*: start a round, tick off who turned
+  up, generate the pairings, enter results, close the round.
+
+Check-ins lock once pairings exist. Use *Clear and re-pair* if someone arrives
+late — the round is regenerated from scratch rather than patched.
+
+## How the pairing works
+
+Round 1 shuffles the checked-in players at random and assigns each of them a
+permanent `pairing_number` the first time they play.
+
+Every later round:
+
+1. Group players by cumulative season score (win 1, draw ½, loss 0, bye 1).
+2. Sort each group by `pairing_number`.
+3. Fold the top half onto the bottom half — 1st plays the middle player, and so on.
+4. Repair the result so nobody replays an opponent, floating players into the
+   neighbouring score group where necessary.
+5. Assign colours, alternating from each player's previous round and keeping
+   everyone's White/Black counts as level as possible.
+6. If the field is odd, the bye goes to the lowest scorer who has not had one.
+
+`pairing_number` is a random integer standing in for a rating. It only ever acts
+as the sort key inside a score group, so a real rating can replace it by passing
+a different `seedOf` to `pairRound` — see
+[`src/lib/swiss/pairing.ts`](src/lib/swiss/pairing.ts). Nothing else changes.
+
+### When a repeat is unavoidable
+
+Small fields genuinely run out of legal pairings. Six players after three rounds
+can split into two groups of three who have all played each other, at which point
+no rematch-free round exists at all. Rather than fail, the engine uses the fewest
+repeats possible and marks those boards, and the officer screen says so. This is
+the one place the "no rematches" rule bends, and only when the alternative is no
+round.
+
+## Development
+
+```bash
+npm run dev          # dev server
+npm test             # pairing and standings tests
+npm run lint
+npm run build
+```
+
+The pairing engine in `src/lib/swiss/` is pure and has no Supabase dependency, so
+it can be tested directly. `src/lib/swiss/__tests__/harness.ts` simulates whole
+seasons and checks the invariants that matter: no repeated match-up unless one is
+mathematically forced, byes only to players who have not had one, colour counts
+inside the standard tolerance, and mid-season joiners entering on zero.
