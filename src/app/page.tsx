@@ -9,7 +9,11 @@ export default async function HomePage() {
   const [officer, season] = await Promise.all([isOfficer(), getActiveSeason()]);
   const history = season ? await getSeasonHistory(season.id) : null;
   const roundsPlayed =
-    history?.rounds.filter((r) => r.status === "completed").length ?? 0;
+    history?.rounds.filter((round) =>
+      history.allPairings.some(
+        (p) => p.round_id === round.id && p.result !== "pending",
+      ),
+    ).length ?? 0;
 
   return (
     <>

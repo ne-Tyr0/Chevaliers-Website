@@ -87,7 +87,7 @@ export async function createSeason(formData: FormData) {
  * Refuses while an earlier round still has unplayed boards — pairing the next
  * round from an incomplete one would use the wrong scores.
  */
-export async function startRound() {
+export async function startRound(formData?: FormData) {
   await assertOfficer();
   const season = await getActiveSeason();
   if (!season) backToOfficer("There is no active season yet.");
@@ -115,11 +115,16 @@ export async function startRound() {
 
   const nextNumber = rounds.reduce((max, r) => Math.max(max, r.round_number), 0) + 1;
 
+  // Backfilled meetings happened before today, so the officer can date them.
+  const playedOnRaw = String(formData?.get("playedOn") ?? "").trim();
+  const playedOn = /^\d{4}-\d{2}-\d{2}$/.test(playedOnRaw) ? playedOnRaw : undefined;
+
   const supabase = createAdminClient();
   const { error } = await supabase.from("rounds").insert({
     season_id: season.id,
     round_number: nextNumber,
     status: "pending",
+    ...(playedOn ? { played_on: playedOn } : {}),
   });
   if (error) backToOfficer(error.message);
 
@@ -244,6 +249,91 @@ export async function generatePairings(formData: FormData) {
   if (insertError) backToOfficer(insertError.message);
 
   await supabase.from("rounds").update({ status: "in_progress" }).eq("id", roundId);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  revalidatePath("/");
+  backToOfficer();
+}
+
+/**
+ * Record one board by hand.
+ *
+ * This is how a club catches up: meetings played before the site existed can be
+ * entered round by round, so the engine has the match history it needs to avoid
+ * rematches and to score the season correctly from here on.
+ */
+export async function addManualPairing(formData: FormData) {
+  await assertOfficer();
+  const roundId = String(formData.get("roundId") ?? "");
+  const whiteId = String(formData.get("whiteId") ?? "");
+  const blackId = String(formData.get("blackId") ?? "");
+  const result = String(formData.get("result") ?? "");
+  if (!roundId || !whiteId) backToOfficer("Pick who played.");
+
+  const isBye = blackId === "" || blackId === "bye";
+  if (!isBye && whiteId === blackId) {
+    backToOfficer("A player cannot play themselves.");
+  }
+
+  const outcomes = ["a_win", "b_win", "draw"] as const;
+  if (!isBye && !outcomes.includes(result as (typeof outcomes)[number])) {
+    backToOfficer("Pick a result for the board.");
+  }
+
+  const supabase = createAdminClient();
+  const { data: existing } = await supabase
+    .from("pairings")
+    .select("board_number, player_a_id, player_b_id")
+    .eq("round_id", roundId);
+
+  const boards = existing ?? [];
+
+  // The unique indexes stop a player appearing twice in the same column, but
+  // not once as White and again as Black, so check across both here.
+  const alreadySeated = new Set<string>();
+  for (const board of boards) {
+    alreadySeated.add(board.player_a_id);
+    if (board.player_b_id) alreadySeated.add(board.player_b_id);
+  }
+  if (alreadySeated.has(whiteId) || (!isBye && alreadySeated.has(blackId))) {
+    backToOfficer("Someone in that board already has a game this round.");
+  }
+
+  const nextBoard =
+    boards.reduce((max, b) => Math.max(max, b.board_number), 0) + 1;
+
+  const { error } = await supabase.from("pairings").insert({
+    round_id: roundId,
+    board_number: nextBoard,
+    player_a_id: whiteId,
+    player_b_id: isBye ? null : blackId,
+    color_a: isBye ? null : ("white" as const),
+    color_b: isBye ? null : ("black" as const),
+    // A bye is already decided; it is never an outstanding result.
+    result: isBye ? ("a_win" as const) : (result as (typeof outcomes)[number]),
+  });
+  if (error) backToOfficer(error.message);
+
+  await supabase
+    .from("rounds")
+    .update({ status: "in_progress" })
+    .eq("id", roundId);
+
+  revalidatePath("/officer");
+  revalidatePath("/standings");
+  revalidatePath("/");
+  backToOfficer();
+}
+
+export async function deletePairing(formData: FormData) {
+  await assertOfficer();
+  const pairingId = String(formData.get("pairingId") ?? "");
+  if (!pairingId) backToOfficer("Missing board.");
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("pairings").delete().eq("id", pairingId);
+  if (error) backToOfficer(error.message);
 
   revalidatePath("/officer");
   revalidatePath("/standings");

@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
 import {
+  addManualPairing,
   addPlayer,
   clearPairings,
   completeRound,
   createSeason,
   generatePairings,
+  deletePairing,
   recordResult,
   setCheckIn,
   setPlayerActive,
@@ -56,6 +58,8 @@ export default async function OfficerPage({ searchParams }: PageProps<"/officer"
         ) : (
           <NewSeasonForm />
         )}
+
+        <RosterSection />
       </main>
     </>
   );
@@ -155,7 +159,19 @@ async function SeasonPanel({
       </p>
 
       {!currentRound || currentRound.status === "completed" ? (
-        <form action={startRound} className="mt-8">
+        <form action={startRound} className="mt-8 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label block" htmlFor="played-on">
+              Date played
+            </label>
+            <input
+              id="played-on"
+              name="playedOn"
+              type="date"
+              className="mt-2 border bg-transparent px-3 py-2 text-sm"
+              style={{ borderColor: "var(--rule-strong)" }}
+            />
+          </div>
           <SubmitButton>
             Start round {(currentRound?.round_number ?? 0) + 1}
           </SubmitButton>
@@ -208,16 +224,19 @@ async function SeasonPanel({
                 roundStatus={currentRound.status}
               />
             )}
+
+            {currentRound.status !== "completed" ? (
+              <ManualBoardForm roundId={currentRound.id} players={active} />
+            ) : null}
           </Section>
         </>
       ) : null}
-
-      <RosterSection roster={roster} />
     </>
   );
 }
 
-function RosterSection({ roster }: { roster: PlayerRow[] }) {
+async function RosterSection() {
+  const roster = await getRoster();
   const retired = roster.filter((p) => !p.is_active);
 
   return (
@@ -383,6 +402,19 @@ function PairingList({
                 <ResultPicker pairingId={pairing.id} result={pairing.result} />
               </>
             )}
+
+            {roundStatus !== "completed" ? (
+              <form action={deletePairing}>
+                <input type="hidden" name="pairingId" value={pairing.id} />
+                <button
+                  type="submit"
+                  aria-label={`Remove board ${pairing.board_number}`}
+                  className="text-faint cursor-pointer text-xs transition-colors hover:text-ink"
+                >
+                  Remove
+                </button>
+              </form>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -523,5 +555,106 @@ function SubmitButton({ children }: { children: React.ReactNode }) {
     >
       {children}
     </button>
+  );
+}
+
+const selectStyle = { borderColor: "var(--rule-strong)" };
+const selectClass = "mt-2 border bg-transparent px-3 py-2 text-sm";
+
+/**
+ * Enter one board by hand.
+ *
+ * This is the catch-up path: a club that played meetings before it had this site
+ * can key those rounds in, and from then on the engine has the history it needs
+ * to avoid rematches and to score the season correctly.
+ */
+function ManualBoardForm({
+  roundId,
+  players,
+}: {
+  roundId: string;
+  players: PlayerRow[];
+}) {
+  return (
+    <div className="mt-10 border-t pt-6" style={{ borderColor: "var(--rule)" }}>
+      <h3 className="label">Add a board by hand</h3>
+      <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
+        For meetings played before the club used this site, or a game the pairing
+        engine did not generate. If you cannot remember who had which pieces, pick
+        either way round — it only nudges colour balance in later rounds.
+      </p>
+
+      <form
+        action={addManualPairing}
+        className="mt-4 flex flex-wrap items-end gap-3"
+      >
+        <input type="hidden" name="roundId" value={roundId} />
+
+        <div>
+          <label className="label block" htmlFor="white-player">
+            White
+          </label>
+          <select
+            id="white-player"
+            name="whiteId"
+            required
+            defaultValue=""
+            className={selectClass}
+            style={selectStyle}
+          >
+            <option value="" disabled>
+              Choose a player
+            </option>
+            {players.map((player) => (
+              <option key={player.id} value={player.id}>
+                {player.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="label block" htmlFor="black-player">
+            Black
+          </label>
+          <select
+            id="black-player"
+            name="blackId"
+            defaultValue=""
+            className={selectClass}
+            style={selectStyle}
+          >
+            <option value="" disabled>
+              Choose a player
+            </option>
+            <option value="bye">No opponent (bye)</option>
+            {players.map((player) => (
+              <option key={player.id} value={player.id}>
+                {player.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="label block" htmlFor="board-result">
+            Result
+          </label>
+          <select
+            id="board-result"
+            name="result"
+            defaultValue="a_win"
+            className={selectClass}
+            style={selectStyle}
+          >
+            <option value="a_win">1–0 (White won)</option>
+            <option value="draw">½–½ (draw)</option>
+            <option value="b_win">0–1 (Black won)</option>
+          </select>
+        </div>
+
+        <SubmitButton>Add board</SubmitButton>
+      </form>
+    </div>
   );
 }

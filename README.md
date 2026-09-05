@@ -61,10 +61,31 @@ failing later with something cryptic.
 Open <http://localhost:3000>.
 
 1. Go to **Officers** and enter your passcode.
-2. **Start season** — name it for the term or year.
-3. Add the club to the **Roster** by name.
+2. Add the club to the **Roster** by name. This works with or without a season.
+3. **Start season** — name it for the term or year.
 4. **Start round 1**, check in whoever turned up, **Generate pairings**.
 5. Enter results as boards finish, then **Close round**.
+
+### Catching up on meetings already played
+
+If the club was running before the site existed, enter that history first —
+otherwise the engine will pair people who have already met and the standings
+will start from nothing.
+
+For each past meeting, in order:
+
+1. **Start round**, setting **Date played** to when it actually happened.
+2. Under **Add a board by hand**, enter each game: who had White, who had Black,
+   and the result. Choose *No opponent (bye)* for anyone who sat out with a point.
+3. **Close round**, then repeat for the next meeting.
+
+Do not press *Generate pairings* on a backfilled round — that is for rounds the
+site is pairing itself. Once your history is in, the next meeting can be paired
+normally and it will take all of it into account.
+
+If you cannot remember who had which colour, pick either way round. It only
+nudges colour balance in later rounds; scores and rematch avoidance are
+unaffected.
 
 ### 4. Deploying, when you are ready
 

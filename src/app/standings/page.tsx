@@ -40,7 +40,11 @@ export default async function StandingsPage() {
   const participants = seasonParticipants(roster, history.allPairings);
   const standings = computeStandings(toPlayerInputs(participants), history.completed);
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
-  const roundsPlayed = history.rounds.filter((r) => r.status === "completed").length;
+  const roundsPlayed = history.rounds.filter((round) =>
+    history.allPairings.some(
+      (p) => p.round_id === round.id && p.result !== "pending",
+    ),
+  ).length;
 
   return (
     <>
