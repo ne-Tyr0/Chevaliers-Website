@@ -10,17 +10,10 @@ import {
   seasonParticipants,
   toPlayerInputs,
 } from "@/lib/club/queries";
+import { StandingsTable } from "@/components/standings-table";
 import { computeStandings } from "@/lib/swiss";
 
 export const metadata: Metadata = { title: "Standings" };
-
-/** 1.5 rather than 1.50, and "½" where a half point reads more naturally. */
-function formatPoints(value: number): string {
-  const whole = Math.floor(value);
-  const hasHalf = value - whole === 0.5;
-  if (hasHalf) return whole === 0 ? "½" : `${whole}½`;
-  return String(value);
-}
 
 export default async function StandingsPage() {
   const viewer = await getViewer();
@@ -71,103 +64,12 @@ export default async function StandingsPage() {
             paired and results are in, the table fills in here.
           </EmptyState>
         ) : (
-          <div className="mt-10 overflow-x-auto">
-            <table className="w-full min-w-[36rem] border-collapse text-sm">
-              <thead>
-                <tr
-                  className="border-b"
-                  style={{ borderColor: "var(--rule-strong)" }}
-                >
-                  <th className="label py-3 pr-3 text-left font-normal" scope="col">
-                    #
-                  </th>
-                  <th className="label py-3 pr-6 text-left font-normal" scope="col">
-                    Player
-                  </th>
-                  <th
-                    className="label py-3 pr-6 text-right font-normal"
-                    scope="col"
-                    data-numeric
-                  >
-                    Score
-                  </th>
-                  <th
-                    className="label py-3 pr-6 text-right font-normal"
-                    scope="col"
-                    data-numeric
-                  >
-                    Played
-                  </th>
-                  <th
-                    className="label py-3 pr-6 text-right font-normal"
-                    scope="col"
-                    data-numeric
-                  >
-                    W–D–L
-                  </th>
-                  <th
-                    className="label py-3 pr-6 text-right font-normal"
-                    scope="col"
-                    data-numeric
-                    title="Sum of opponents' scores"
-                  >
-                    Buch.
-                  </th>
-                  <th
-                    className="label py-3 text-right font-normal"
-                    scope="col"
-                    data-numeric
-                    title="Sonneborn-Berger"
-                  >
-                    S-B
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {standings.map((row) => {
-                  const isViewer = row.playerId === viewer.profile.id;
-                  return (
-                    <tr
-                      key={row.playerId}
-                      className="border-b"
-                      style={{
-                        borderColor: "var(--rule)",
-                        backgroundColor: isViewer
-                          ? "var(--color-cream-deep)"
-                          : undefined,
-                      }}
-                    >
-                      <td className="text-faint py-3 pr-3" data-numeric>
-                        {row.rank}
-                      </td>
-                      <td className="py-3 pr-6">
-                        {nameById.get(row.playerId) ?? "Unknown player"}
-                        {row.byes > 0 ? (
-                          <span className="text-faint ml-2 text-xs">
-                            {row.byes === 1 ? "bye" : `${row.byes} byes`}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="py-3 pr-6 text-right font-medium" data-numeric>
-                        {formatPoints(row.score)}
-                      </td>
-                      <td className="text-muted py-3 pr-6 text-right" data-numeric>
-                        {row.gamesPlayed}
-                      </td>
-                      <td className="text-muted py-3 pr-6 text-right" data-numeric>
-                        {row.wins}–{row.draws}–{row.losses}
-                      </td>
-                      <td className="text-faint py-3 pr-6 text-right" data-numeric>
-                        {formatPoints(row.buchholz)}
-                      </td>
-                      <td className="text-faint py-3 text-right" data-numeric>
-                        {formatPoints(row.sonnebornBerger)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="mt-10">
+            <StandingsTable
+              rows={standings}
+              nameById={nameById}
+              highlightId={viewer.profile.id}
+            />
           </div>
         )}
 
