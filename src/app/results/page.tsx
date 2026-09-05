@@ -46,8 +46,8 @@ export default async function ResultsPage() {
     return (
       <>
         <SiteHeader role={role} currentPath="/results" />
-        <main className="mx-auto max-w-5xl px-6 py-20">
-          <h1 className="text-4xl">Pairings &amp; results</h1>
+        <main className="mx-auto max-w-5xl px-6 py-12 sm:py-20">
+          <h1 className="text-3xl sm:text-4xl">Pairings &amp; results</h1>
           <Empty>
             No season is running yet. Once an officer starts one and pairs the
             first round, every matchup appears here.
@@ -85,9 +85,9 @@ export default async function ResultsPage() {
     <>
       <SiteHeader role={role} currentPath="/results" />
 
-      <main className="mx-auto max-w-5xl px-6 py-16">
+      <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
         <p className="label">{season.name}</p>
-        <h1 className="mt-3 text-4xl">Pairings &amp; results</h1>
+        <h1 className="mt-3 text-3xl sm:text-4xl">Pairings &amp; results</h1>
         <p className="text-muted mt-3 text-sm">
           Every matchup of the season, most recent first. Each is three games, so
           the score shown is the matchup total. Open one to see the games, or
@@ -160,12 +160,22 @@ function Matchup({
     ? (nameById.get(view.pairing.player_b_id) ?? "Unknown player")
     : null;
 
+  /*
+   * Side by side on a desk, stacked on a phone. Two 1fr name columns on a
+   * 390px screen leave each player about 100px — enough for "Baricuatro, F…"
+   * and nothing more. Stacking gives each name the full width of the row and
+   * keeps the board number and score flanking the pair, so a matchup still
+   * reads as one unit.
+   */
   const header = (
-    <div className="grid grid-cols-[2rem_1fr_auto_1fr] items-center gap-3 text-sm">
-      <span className="text-faint" data-numeric>
+    <div className="grid grid-cols-[2rem_1fr_auto] items-center gap-x-3 gap-y-1 text-sm sm:grid-cols-[2rem_1fr_auto_1fr]">
+      <span
+        className="text-faint row-span-2 self-start pt-0.5 sm:row-span-1 sm:self-center sm:pt-0"
+        data-numeric
+      >
         {view.pairing.board_number}
       </span>
-      <span className="min-w-0">
+      <span className="col-start-2 row-start-1 min-w-0">
         <Name
           id={view.pairing.player_a_id}
           nameById={nameById}
@@ -173,14 +183,14 @@ function Matchup({
           gamesByPlayer={gamesByPlayer}
         />
       </span>
-      <span className="text-center tabular-nums whitespace-nowrap">
+      <span className="col-start-3 row-span-2 row-start-1 self-center text-center tabular-nums whitespace-nowrap sm:row-span-1">
         {isBye ? (
           <span className="text-muted text-xs">bye</span>
         ) : (
           formatMatchupScore(view)
         )}
       </span>
-      <span className="min-w-0">
+      <span className="col-start-2 row-start-2 min-w-0 sm:col-start-4 sm:row-start-1">
         {isBye ? (
           <span className="text-faint text-xs">—</span>
         ) : (
@@ -220,11 +230,13 @@ function Matchup({
           {view.games.map((game) => (
             <li
               key={game.id}
-              className="flex items-center gap-3 py-1.5 text-xs"
+              className="flex items-center gap-x-3 gap-y-0.5 py-1.5 text-xs"
               title={RESULT_HINT[game.result]}
             >
-              <span className="text-faint w-14">Game {game.game_number}</span>
-              <span className="text-muted min-w-0 flex-1 truncate">
+              <span className="text-faint w-14 shrink-0">
+                Game {game.game_number}
+              </span>
+              <span className="text-muted min-w-0 flex-1">
                 {game.color_a === "white"
                   ? `${nameA} as White`
                   : game.color_a === "black"
@@ -262,7 +274,7 @@ function Name({
   if (!row) return <span>{name}</span>;
 
   return (
-    <StatPopover label={name} className="truncate">
+    <StatPopover label={name} className="sm:truncate">
       <PlayerCard
         name={name}
         row={row}

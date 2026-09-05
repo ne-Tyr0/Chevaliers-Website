@@ -21,9 +21,9 @@ export default async function HomePage() {
     <>
       <SiteHeader role={role} currentPath="/" />
 
-      <main className="mx-auto max-w-5xl px-6 py-20">
+      <main className="mx-auto max-w-5xl px-6 py-12 sm:py-20">
         <p className="label">School chess club</p>
-        <h1 className="mt-4 text-5xl text-balance">
+        <h1 className="mt-4 text-4xl text-balance sm:text-5xl">
           <Wordmark /> Chess Club
         </h1>
 

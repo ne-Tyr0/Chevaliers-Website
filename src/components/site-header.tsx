@@ -20,12 +20,17 @@ export function SiteHeader({
 
   return (
     <header className="border-b" style={{ borderColor: "var(--rule)" }}>
-      <div className="mx-auto flex max-w-5xl items-baseline gap-8 px-6 py-6">
+      {/* Wraps because the bar does not fit a phone on one line: wordmark plus
+          three links needs ~400px, and an officer's or arbiter's extra "Lock
+          tools" button pushes it past 600px, against a 390px handset. Without
+          wrapping that overflow widens the document on every page of the site,
+          not just this bar. */}
+      <div className="mx-auto flex max-w-5xl flex-wrap items-baseline gap-x-6 gap-y-3 px-6 py-6 sm:gap-x-8">
         <Link href="/" className="text-xl">
           <Wordmark />
         </Link>
 
-        <nav className="flex items-baseline gap-6 text-sm">
+        <nav className="flex flex-wrap items-baseline gap-x-5 gap-y-2 text-sm sm:gap-x-6">
           {links.map((link) => {
             const active =
               currentPath === link.href || currentPath.startsWith(`${link.href}/`);
@@ -36,8 +41,8 @@ export function SiteHeader({
                 aria-current={active ? "page" : undefined}
                 className={
                   active
-                    ? "border-b pb-0.5 text-ink"
-                    : "text-muted transition-colors hover:text-ink"
+                    ? "border-b pt-1 pb-1 text-ink"
+                    : "text-muted py-1 transition-colors hover:text-ink"
                 }
                 style={active ? { borderColor: "var(--color-ink)" } : undefined}
               >

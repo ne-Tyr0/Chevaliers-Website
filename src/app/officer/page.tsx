@@ -47,9 +47,9 @@ export default async function OfficerPage({ searchParams }: PageProps<"/officer"
     <>
       <SiteHeader role={role} currentPath="/officer" />
 
-      <main className="mx-auto max-w-5xl px-6 py-16">
+      <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
         <p className="label">Officers</p>
-        <h1 className="mt-3 text-4xl">Run a round</h1>
+        <h1 className="mt-3 text-3xl sm:text-4xl">Run a round</h1>
 
         {error ? <ErrorNote>{error}</ErrorNote> : null}
 
@@ -67,7 +67,7 @@ export default async function OfficerPage({ searchParams }: PageProps<"/officer"
 
 function PasscodeGate({ error }: { error: string | null }) {
   return (
-    <main className="mx-auto max-w-md px-6 py-24">
+    <main className="mx-auto max-w-md px-6 py-16 sm:py-24">
       <Pawn className="mb-8 h-8 w-auto" />
       <h1 className="text-3xl">Club tools</h1>
       <p className="text-muted mt-3 text-sm leading-relaxed">
@@ -250,12 +250,15 @@ function MatchupList({
             >
               <Link
                 href={`/matchup/${view.pairing.id}`}
-                className="flex min-w-0 flex-1 items-center gap-4 py-3 text-sm transition-colors hover:bg-cream-deep"
+                className="grid min-w-0 flex-1 grid-cols-[1.5rem_1fr_auto] items-center gap-x-4 gap-y-1 py-3 text-sm transition-colors hover:bg-cream-deep sm:grid-cols-[1.5rem_1fr_auto_5rem]"
               >
-                <span className="text-faint w-6" data-numeric>
+                <span
+                  className="text-faint row-span-2 self-start pt-0.5 sm:row-span-1 sm:self-center sm:pt-0"
+                  data-numeric
+                >
                   {view.pairing.board_number}
                 </span>
-                <span className="min-w-0 flex-1">
+                <span className="col-start-2 row-start-1 min-w-0">
                   {nameById.get(view.pairing.player_a_id)}
                   {isBye ? (
                     <span className="text-faint"> — bye</span>
@@ -269,14 +272,14 @@ function MatchupList({
                     <span className="text-faint ml-2 text-xs">repeat</span>
                   ) : null}
                 </span>
-                <span className="tabular-nums whitespace-nowrap">
+                <span className="col-start-3 row-start-1 tabular-nums whitespace-nowrap">
                   {isBye ? (
                     <span className="text-faint text-xs">—</span>
                   ) : (
                     formatMatchupScore(view)
                   )}
                 </span>
-                <span className="text-faint w-20 text-right text-xs">
+                <span className="text-faint col-start-2 row-start-2 text-xs sm:col-start-4 sm:row-start-1 sm:text-right">
                   {isBye ? "" : left === 0 ? "complete" : `${left} to go`}
                 </span>
               </Link>
@@ -287,7 +290,7 @@ function MatchupList({
                   <button
                     type="submit"
                     aria-label={`Remove board ${view.pairing.board_number}`}
-                    className="text-faint cursor-pointer text-xs transition-colors hover:text-ink"
+                    className="text-faint cursor-pointer px-1 py-2 text-xs transition-colors hover:text-ink"
                   >
                     Remove
                   </button>
@@ -472,7 +475,7 @@ async function RosterSection() {
                 />
                 <button
                   type="submit"
-                  className="text-faint cursor-pointer text-xs transition-colors hover:text-ink"
+                  className="text-faint cursor-pointer px-1 py-2 text-xs transition-colors hover:text-ink"
                 >
                   {player.is_active ? "Retire" : "Reinstate"}
                 </button>

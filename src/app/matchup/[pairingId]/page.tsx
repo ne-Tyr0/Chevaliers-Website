@@ -35,7 +35,7 @@ export default async function MatchupPage({
     <>
       <SiteHeader role={role} currentPath="/matchup" />
 
-      <main className="mx-auto max-w-3xl px-6 py-16">
+      <main className="mx-auto max-w-3xl px-6 py-10 sm:py-16">
         <Link href={home} className="text-faint text-sm hover:text-ink">
           ← Back to {role === "officer" ? "officer tools" : "arbiter tools"}
         </Link>

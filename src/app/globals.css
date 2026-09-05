@@ -100,3 +100,21 @@
     color: var(--ink-faint);
   }
 }
+
+/*
+ * iOS Safari zooms the whole viewport in whenever a focused control's text is
+ * smaller than 16px, and never zooms back out — tapping the passcode box or a
+ * player select leaves the page scaled up and scrolled sideways, which reads
+ * as the layout breaking. The controls are `text-sm` for the desk, so this
+ * lifts them to 16px on touch pointers only.
+ *
+ * Deliberately outside `@layer`: Tailwind's utilities are layered, and a
+ * layered rule here would lose to the `text-sm` on each control.
+ */
+@media (hover: none) and (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

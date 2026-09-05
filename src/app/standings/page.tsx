@@ -21,8 +21,8 @@ export default async function StandingsPage() {
     return (
       <>
         <SiteHeader role={role} currentPath="/standings" />
-        <main className="mx-auto max-w-5xl px-6 py-20">
-          <h1 className="text-4xl">Standings</h1>
+        <main className="mx-auto max-w-5xl px-6 py-12 sm:py-20">
+          <h1 className="text-3xl sm:text-4xl">Standings</h1>
           <EmptyState>
             No season is running yet, so there is nothing to rank. An officer can
             start one from the round screen.
@@ -57,9 +57,9 @@ export default async function StandingsPage() {
     <>
       <SiteHeader role={role} currentPath="/standings" />
 
-      <main className="mx-auto max-w-5xl px-6 py-16">
+      <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
         <p className="label">{season.name}</p>
-        <h1 className="mt-3 text-4xl">Standings</h1>
+        <h1 className="mt-3 text-3xl sm:text-4xl">Standings</h1>
         <p className="text-muted mt-3 text-sm">
           After {roundsPlayed} {roundsPlayed === 1 ? "round" : "rounds"}. Ordered by
           score, then Buchholz, then Sonneborn-Berger.

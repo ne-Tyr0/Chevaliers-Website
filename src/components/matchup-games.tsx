@@ -68,8 +68,8 @@ export function MatchupGames({
             <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
               <span className="label">Game {game.game_number}</span>
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <div className="flex items-center gap-1.5">
+              <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-faint text-xs">White</span>
                   <ColorButton
                     gameId={game.id}
@@ -87,7 +87,7 @@ export function MatchupGames({
                   />
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {PLAYED_RESULTS.map((option) => (
                     <ResultButton
                       key={option.value}
@@ -150,7 +150,7 @@ function ColorButton({
       <button
         type="submit"
         aria-pressed={selected}
-        className="max-w-[9rem] cursor-pointer truncate border px-2 py-1 text-xs transition-colors hover:bg-ink hover:text-cream"
+        className="max-w-[7rem] cursor-pointer truncate border px-3 py-2 text-xs transition-colors hover:bg-ink hover:text-cream sm:max-w-[9rem] sm:px-2 sm:py-1"
         style={
           selected
             ? {
@@ -191,7 +191,7 @@ function ResultButton({
       <button
         type="submit"
         aria-pressed={selected}
-        className={`cursor-pointer border px-2 py-1 text-xs transition-colors hover:bg-ink hover:text-cream ${
+        className={`min-w-11 cursor-pointer border px-3 py-2 text-xs transition-colors hover:bg-ink hover:text-cream sm:min-w-0 sm:px-2 sm:py-1 ${
           muted && !selected ? "text-faint" : ""
         }`}
         style={

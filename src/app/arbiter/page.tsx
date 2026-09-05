@@ -31,9 +31,9 @@ export default async function ArbiterPage() {
     <>
       <SiteHeader role={role} currentPath="/arbiter" />
 
-      <main className="mx-auto max-w-3xl px-6 py-16">
+      <main className="mx-auto max-w-3xl px-6 py-10 sm:py-16">
         <p className="label">Arbiter</p>
-        <h1 className="mt-3 text-4xl">Report results</h1>
+        <h1 className="mt-3 text-3xl sm:text-4xl">Report results</h1>
 
         {!openRound || matchups.length === 0 ? (
           <div
@@ -65,14 +65,21 @@ export default async function ArbiterPage() {
                     className="border-b"
                     style={{ borderColor: "var(--rule)" }}
                   >
+                    {/* Four columns on a desk. On a phone the fixed 6rem
+                        status column alone ate a fifth of the width and left
+                        two full names about 120px, so it drops to a second
+                        line under the pairing instead. */}
                     <Link
                       href={`/matchup/${view.pairing.id}`}
-                      className="flex items-center gap-4 py-4 transition-colors hover:bg-cream-deep"
+                      className="grid grid-cols-[1.5rem_1fr_auto] items-center gap-x-4 gap-y-1 py-4 transition-colors hover:bg-cream-deep sm:grid-cols-[1.5rem_1fr_auto_6rem]"
                     >
-                      <span className="text-faint w-6 text-sm" data-numeric>
+                      <span
+                        className="text-faint row-span-2 self-start pt-0.5 text-sm sm:row-span-1 sm:self-center sm:pt-0"
+                        data-numeric
+                      >
                         {view.pairing.board_number}
                       </span>
-                      <span className="min-w-0 flex-1 text-sm">
+                      <span className="col-start-2 row-start-1 min-w-0 text-sm">
                         {nameById.get(view.pairing.player_a_id)}
                         {isBye ? (
                           <span className="text-faint"> — bye</span>
@@ -83,14 +90,14 @@ export default async function ArbiterPage() {
                           </>
                         )}
                       </span>
-                      <span className="text-sm tabular-nums whitespace-nowrap">
+                      <span className="col-start-3 row-start-1 text-sm tabular-nums whitespace-nowrap">
                         {isBye ? (
                           <span className="text-faint text-xs">—</span>
                         ) : (
                           formatMatchupScore(view)
                         )}
                       </span>
-                      <span className="text-faint w-24 text-right text-xs">
+                      <span className="text-faint col-start-2 row-start-2 text-xs sm:col-start-4 sm:row-start-1 sm:text-right">
                         {isBye
                           ? ""
                           : outstanding === 0
