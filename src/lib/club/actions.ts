@@ -132,32 +132,11 @@ export async function startRound(formData?: FormData) {
   backToOfficer();
 }
 
-export async function setCheckIn(formData: FormData) {
-  await assertOfficer();
-  const roundId = String(formData.get("roundId") ?? "");
-  const playerId = String(formData.get("playerId") ?? "");
-  const present = String(formData.get("present") ?? "") === "true";
-  if (!roundId || !playerId) backToOfficer("Missing round or player.");
-
-  const supabase = createAdminClient();
-  const { error } = present
-    ? await supabase
-        .from("round_check_ins")
-        .upsert({ round_id: roundId, player_id: playerId })
-    : await supabase
-        .from("round_check_ins")
-        .delete()
-        .eq("round_id", roundId)
-        .eq("player_id", playerId);
-
-  if (error) backToOfficer(error.message);
-
-  revalidatePath("/officer");
-  backToOfficer();
-}
-
 /**
- * Pair the checked-in players for a round and write the boards.
+ * Pair every active player for a round and write the boards.
+ *
+ * There is no check-in step: the roster is the field. Anyone who does not
+ * complete their game gets forfeited when the round is closed instead.
  *
  * Anyone playing their first ever game gets a `pairing_number` here — it is
  * assigned once and then kept for the rest of their time at the club.
@@ -181,23 +160,15 @@ export async function generatePairings(formData: FormData) {
     );
   }
 
-  const { data: checkIns } = await supabase
-    .from("round_check_ins")
-    .select("player_id")
-    .eq("round_id", roundId);
-
-  const checkedInIds = (checkIns ?? []).map((row) => row.player_id);
-  if (checkedInIds.length === 0) {
-    backToOfficer("Nobody is checked in for this round yet.");
-  }
-
   const { data: players } = await supabase
     .from("players")
     .select("*")
-    .in("id", checkedInIds);
+    .eq("is_active", true);
 
-  if (!players || players.length !== checkedInIds.length) {
-    backToOfficer("Could not load every checked-in player.");
+  if (!players || players.length < 2) {
+    backToOfficer(
+      "Add at least two active players to the roster before pairing a round.",
+    );
   }
 
   // First game ever: give them their persistent pairing number.
@@ -276,7 +247,14 @@ export async function addManualPairing(formData: FormData) {
     backToOfficer("A player cannot play themselves.");
   }
 
-  const outcomes = ["a_win", "b_win", "draw"] as const;
+  const outcomes = [
+    "a_win",
+    "b_win",
+    "draw",
+    "a_forfeit_win",
+    "b_forfeit_win",
+    "double_forfeit",
+  ] as const;
   if (!isBye && !outcomes.includes(result as (typeof outcomes)[number])) {
     backToOfficer("Pick a result for the board.");
   }
@@ -362,7 +340,15 @@ export async function recordResult(formData: FormData) {
   const pairingId = String(formData.get("pairingId") ?? "");
   const result = String(formData.get("result") ?? "");
 
-  const allowed = ["pending", "a_win", "b_win", "draw"] as const;
+  const allowed = [
+    "pending",
+    "a_win",
+    "b_win",
+    "draw",
+    "a_forfeit_win",
+    "b_forfeit_win",
+    "double_forfeit",
+  ] as const;
   if (!pairingId || !allowed.includes(result as (typeof allowed)[number])) {
     backToOfficer("That is not a valid result.");
   }
@@ -388,14 +374,28 @@ export async function completeRound(formData: FormData) {
   const supabase = createAdminClient();
   const { data: boards } = await supabase
     .from("pairings")
-    .select("result")
+    .select("id, result")
     .eq("round_id", roundId);
 
   if (!boards || boards.length === 0) {
     backToOfficer("This round has no pairings yet.");
   }
-  if (boards.some((b) => b.result === "pending")) {
-    backToOfficer("Every board needs a result before the round can be closed.");
+
+  const unplayed = boards.filter((b) => b.result === "pending");
+  if (unplayed.length > 0) {
+    if (String(formData.get("forfeitUnplayed") ?? "") !== "true") {
+      backToOfficer(
+        `${unplayed.length} ${unplayed.length === 1 ? "board has" : "boards have"} no result yet. Enter them, or close the round forfeiting them.`,
+      );
+    }
+
+    // A game nobody completed is a double forfeit: neither player scores.
+    const { error: forfeitError } = await supabase
+      .from("pairings")
+      .update({ result: "double_forfeit" })
+      .eq("round_id", roundId)
+      .eq("result", "pending");
+    if (forfeitError) backToOfficer(forfeitError.message);
   }
 
   const { error } = await supabase

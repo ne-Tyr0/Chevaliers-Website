@@ -133,3 +133,133 @@ describe("computeStandings", () => {
     expect(row("cy").rank).toBeLessThan(row("bo").rank);
   });
 });
+
+describe("forfeits", () => {
+  const roster = [
+    { id: "ana", pairingNumber: 30 },
+    { id: "bo", pairingNumber: 20 },
+    { id: "cy", pairingNumber: 10 },
+    { id: "dee", pairingNumber: 5 },
+  ];
+
+  /**
+   * ana beats bo over the board, then wins by forfeit against cy.
+   * dee and cy double-forfeit, so neither scores.
+   */
+  const games: CompletedPairing[] = [
+    {
+      roundNumber: 1,
+      playerAId: "ana",
+      playerBId: "bo",
+      colorA: "white",
+      colorB: "black",
+      result: "a_win",
+    },
+    {
+      roundNumber: 2,
+      playerAId: "ana",
+      playerBId: "cy",
+      colorA: "black",
+      colorB: "white",
+      result: "a_forfeit_win",
+    },
+    {
+      roundNumber: 2,
+      playerAId: "dee",
+      playerBId: "bo",
+      colorA: "white",
+      colorB: "black",
+      result: "double_forfeit",
+    },
+  ];
+
+  const rows = computeStandings(roster, games);
+  const row = (id: string) => rows.find((r) => r.playerId === id)!;
+
+  it("awards a full point for a forfeit win and none for a forfeit loss", () => {
+    expect(row("ana").score).toBe(2);
+    expect(row("cy").score).toBe(0);
+  });
+
+  it("scores nothing for either player in a double forfeit", () => {
+    expect(row("dee").score).toBe(0);
+    expect(row("bo").score).toBe(0);
+  });
+
+  it("excludes forfeits from games played", () => {
+    // ana played one real game; the forfeit win was not played.
+    expect(row("ana").gamesPlayed).toBe(1);
+    expect(row("ana").wins).toBe(1);
+    expect(row("ana").forfeitWins).toBe(1);
+
+    // bo lost one real game and had one double forfeit.
+    expect(row("bo").gamesPlayed).toBe(1);
+    expect(row("bo").losses).toBe(1);
+    expect(row("bo").forfeitLosses).toBe(1);
+
+    expect(row("cy").gamesPlayed).toBe(0);
+    expect(row("cy").forfeitLosses).toBe(1);
+    expect(row("dee").gamesPlayed).toBe(0);
+    expect(row("dee").forfeitLosses).toBe(1);
+  });
+
+  it("keeps a forfeit out of Buchholz", () => {
+    // ana's only played game was against bo, who has 0 points. The forfeit
+    // against cy must add nothing, so Buchholz is 0 rather than cy's score.
+    expect(row("ana").buchholz).toBe(0);
+    // cy and dee played nobody at all.
+    expect(row("cy").buchholz).toBe(0);
+    expect(row("dee").buchholz).toBe(0);
+  });
+
+  it("keeps a forfeit out of Sonneborn-Berger", () => {
+    // The win over bo (0 points) is worth 0, and the forfeit adds nothing.
+    expect(row("ana").sonnebornBerger).toBe(0);
+  });
+
+  it("does not let a forfeit win beat a real win on tiebreak", () => {
+    // A player who wins by forfeit gains score but no tiebreak credit, so two
+    // players level on points are separated by who actually played.
+    const contested = computeStandings(
+      [
+        { id: "played", pairingNumber: 2 },
+        { id: "walkover", pairingNumber: 1 },
+        { id: "strong", pairingNumber: 3 },
+        { id: "absent", pairingNumber: 4 },
+      ],
+      [
+        {
+          roundNumber: 1,
+          playerAId: "played",
+          playerBId: "strong",
+          colorA: "white",
+          colorB: "black",
+          result: "a_win",
+        },
+        {
+          roundNumber: 1,
+          playerAId: "walkover",
+          playerBId: "absent",
+          colorA: "white",
+          colorB: "black",
+          result: "a_forfeit_win",
+        },
+        {
+          roundNumber: 2,
+          playerAId: "strong",
+          playerBId: "absent",
+          colorA: "white",
+          colorB: "black",
+          result: "a_win",
+        },
+      ],
+    );
+
+    const played = contested.find((r) => r.playerId === "played")!;
+    const walkover = contested.find((r) => r.playerId === "walkover")!;
+
+    expect(played.score).toBe(walkover.score);
+    expect(played.buchholz).toBeGreaterThan(walkover.buchholz);
+    expect(played.rank).toBeLessThan(walkover.rank);
+  });
+});

@@ -10,14 +10,12 @@ import {
   generatePairings,
   deletePairing,
   recordResult,
-  setCheckIn,
   setPlayerActive,
   startRound,
   unlockOfficer,
 } from "@/lib/club/actions";
 import {
   getActiveSeason,
-  getCheckedInIds,
   getRoster,
   getRoundPairings,
   getSeasonHistory,
@@ -141,14 +139,7 @@ async function SeasonPanel({
   ]);
 
   const currentRound = history.rounds.at(-1) ?? null;
-  const [pairings, checkedInIds] = currentRound
-    ? await Promise.all([
-        getRoundPairings(currentRound.id),
-        getCheckedInIds(currentRound.id),
-      ])
-    : [[], []];
-
-  const checkedIn = new Set(checkedInIds);
+  const pairings = currentRound ? await getRoundPairings(currentRound.id) : [];
   const active = roster.filter((p) => p.is_active);
 
   return (
@@ -181,35 +172,15 @@ async function SeasonPanel({
       {currentRound ? (
         <>
           <Section
-            title={`Round ${currentRound.round_number} · who is here`}
-            note={`${checkedIn.size} of ${active.length} checked in`}
+            title={`Round ${currentRound.round_number} · boards`}
+            note={`${active.length} active players`}
           >
-            {active.length === 0 ? (
-              <Note>
-                The roster is empty. Add players below, then check in whoever turned
-                up.
-              </Note>
-            ) : (
-              <ul className="mt-4 grid gap-x-8 gap-y-1 sm:grid-cols-2">
-                {active.map((player) => (
-                  <CheckInRow
-                    key={player.id}
-                    player={player}
-                    roundId={currentRound.id}
-                    present={checkedIn.has(player.id)}
-                    locked={pairings.length > 0}
-                  />
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section title={`Round ${currentRound.round_number} · boards`}>
             {pairings.length === 0 ? (
               <>
                 <Note>
-                  Check in everyone who turned up, then generate the pairings. With
-                  an odd number of players one bye is given automatically.
+                  Every active player on the roster is paired. With an odd number
+                  one bye is given automatically, and anyone who does not finish
+                  their game is forfeited when you close the round.
                 </Note>
                 <form action={generatePairings} className="mt-5">
                   <input type="hidden" name="roundId" value={currentRound.id} />
@@ -299,48 +270,6 @@ async function RosterSection() {
   );
 }
 
-function CheckInRow({
-  player,
-  roundId,
-  present,
-  locked,
-}: {
-  player: PlayerRow;
-  roundId: string;
-  present: boolean;
-  locked: boolean;
-}) {
-  return (
-    <li
-      className="flex items-center justify-between border-b py-2"
-      style={{ borderColor: "var(--rule)" }}
-    >
-      <span className={present ? "text-sm" : "text-faint text-sm"}>
-        {player.full_name}
-      </span>
-
-      {locked ? (
-        <span className="text-faint text-xs">{present ? "playing" : "away"}</span>
-      ) : (
-        <form action={setCheckIn}>
-          <input type="hidden" name="roundId" value={roundId} />
-          <input type="hidden" name="playerId" value={player.id} />
-          <input type="hidden" name="present" value={present ? "false" : "true"} />
-          <button
-            type="submit"
-            className="cursor-pointer border px-2.5 py-1 text-xs transition-colors hover:bg-ink hover:text-cream"
-            style={{
-              borderColor: present ? "var(--color-ink)" : "var(--rule-strong)",
-            }}
-          >
-            {present ? "Here" : "Mark here"}
-          </button>
-        </form>
-      )}
-    </li>
-  );
-}
-
 function PairingList({
   pairings,
   roster,
@@ -427,6 +356,17 @@ function PairingList({
           </form>
         ) : null}
 
+        {roundStatus !== "completed" && outstanding > 0 ? (
+          <form action={completeRound}>
+            <input type="hidden" name="roundId" value={roundId} />
+            <input type="hidden" name="forfeitUnplayed" value="true" />
+            <SubmitButton>
+              Close round, forfeiting {outstanding}{" "}
+              {outstanding === 1 ? "game" : "games"}
+            </SubmitButton>
+          </form>
+        ) : null}
+
         {roundStatus !== "completed" ? (
           <form action={clearPairings}>
             <input type="hidden" name="roundId" value={roundId} />
@@ -463,45 +403,88 @@ function Player({ name, color }: { name?: string; color: string | null }) {
   );
 }
 
-function ResultPicker({ pairingId, result }: { pairingId: string; result: string }) {
-  const options = [
-    { value: "a_win", label: "1–0" },
-    { value: "draw", label: "½–½" },
-    { value: "b_win", label: "0–1" },
-  ];
+const PLAYED_RESULTS = [
+  { value: "a_win", label: "1–0", hint: "White won" },
+  { value: "draw", label: "½–½", hint: "Draw" },
+  { value: "b_win", label: "0–1", hint: "Black won" },
+];
 
+const FORFEIT_RESULTS = [
+  { value: "a_forfeit_win", label: "+ −", hint: "Black did not appear" },
+  { value: "b_forfeit_win", label: "− +", hint: "White did not appear" },
+  { value: "double_forfeit", label: "− −", hint: "Neither player appeared" },
+];
+
+function ResultPicker({ pairingId, result }: { pairingId: string; result: string }) {
   return (
-    <div className="flex gap-1.5">
-      {options.map((option) => {
-        const selected = result === option.value;
-        return (
-          <form action={recordResult} key={option.value}>
-            <input type="hidden" name="pairingId" value={pairingId} />
-            <input
-              type="hidden"
-              name="result"
-              value={selected ? "pending" : option.value}
-            />
-            <button
-              type="submit"
-              aria-pressed={selected}
-              className="cursor-pointer border px-2.5 py-1 text-xs transition-colors hover:bg-ink hover:text-cream"
-              style={
-                selected
-                  ? {
-                      borderColor: "var(--color-ink)",
-                      backgroundColor: "var(--color-ink)",
-                      color: "var(--color-cream)",
-                    }
-                  : { borderColor: "var(--rule-strong)" }
-              }
-            >
-              {option.label}
-            </button>
-          </form>
-        );
-      })}
+    <div className="flex items-center gap-1.5">
+      {PLAYED_RESULTS.map((option) => (
+        <ResultButton
+          key={option.value}
+          pairingId={pairingId}
+          option={option}
+          selected={result === option.value}
+        />
+      ))}
+
+      <span aria-hidden className="text-faint px-1 text-xs">
+        |
+      </span>
+
+      {FORFEIT_RESULTS.map((option) => (
+        <ResultButton
+          key={option.value}
+          pairingId={pairingId}
+          option={option}
+          selected={result === option.value}
+          muted
+        />
+      ))}
     </div>
+  );
+}
+
+function ResultButton({
+  pairingId,
+  option,
+  selected,
+  muted,
+}: {
+  pairingId: string;
+  option: { value: string; label: string; hint: string };
+  selected: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <form action={recordResult}>
+      <input type="hidden" name="pairingId" value={pairingId} />
+      {/* Pressing the current result again clears it back to unreported. */}
+      <input
+        type="hidden"
+        name="result"
+        value={selected ? "pending" : option.value}
+      />
+      <button
+        type="submit"
+        aria-pressed={selected}
+        title={option.hint}
+        className={`cursor-pointer border px-2.5 py-1 text-xs transition-colors hover:bg-ink hover:text-cream ${
+          muted && !selected ? "text-faint" : ""
+        }`}
+        style={
+          selected
+            ? {
+                borderColor: "var(--color-ink)",
+                backgroundColor: "var(--color-ink)",
+                color: "var(--color-cream)",
+              }
+            : { borderColor: "var(--rule-strong)" }
+        }
+      >
+        {option.label}
+        <span className="sr-only"> — {option.hint}</span>
+      </button>
+    </form>
   );
 }
 

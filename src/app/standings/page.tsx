@@ -10,7 +10,7 @@ import {
   toPlayerInputs,
 } from "@/lib/club/queries";
 import { isOfficer } from "@/lib/officer/session";
-import { computeStandings } from "@/lib/swiss";
+import { computeStandings, gameRecordsByPlayer } from "@/lib/swiss";
 
 export const metadata: Metadata = { title: "Standings" };
 
@@ -40,6 +40,7 @@ export default async function StandingsPage() {
   const participants = seasonParticipants(roster, history.allPairings);
   const standings = computeStandings(toPlayerInputs(participants), history.completed);
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
+  const gamesByPlayer = gameRecordsByPlayer(history.completed);
   const roundsPlayed = history.rounds.filter((round) =>
     history.allPairings.some(
       (p) => p.round_id === round.id && p.result !== "pending",
@@ -65,7 +66,11 @@ export default async function StandingsPage() {
           </EmptyState>
         ) : (
           <div className="mt-10">
-            <StandingsTable rows={standings} nameById={nameById} />
+            <StandingsTable
+              rows={standings}
+              nameById={nameById}
+              gamesByPlayer={gamesByPlayer}
+            />
           </div>
         )}
 

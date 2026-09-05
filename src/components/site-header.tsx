@@ -11,6 +11,7 @@ export function SiteHeader({
 }) {
   const links = [
     { href: "/standings", label: "Standings" },
+    { href: "/results", label: "Results" },
     { href: "/officer", label: isOfficer ? "Run a round" : "Officers" },
   ];
 

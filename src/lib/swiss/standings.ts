@@ -1,5 +1,5 @@
 import { CompletedPairing, gameRecordsByPlayer, PlayerProfileInput } from "./state";
-import { GameRecord, POINTS } from "./types";
+import { GameRecord, isPlayed, POINTS } from "./types";
 
 export interface StandingRow {
   playerId: string;
@@ -10,6 +10,10 @@ export interface StandingRow {
   draws: number;
   losses: number;
   byes: number;
+  /** Points collected without playing: a no-show by the opponent. */
+  forfeitWins: number;
+  /** Games lost without playing, including a double forfeit. */
+  forfeitLosses: number;
   /** Sum of opponents' current scores. */
   buchholz: number;
   /** Sum of defeated opponents' scores plus half of each drawn opponent's score. */
@@ -26,8 +30,9 @@ export interface StandingRow {
  * raw points are misleading when players have sat out different numbers of
  * rounds.
  *
- * Byes are treated as a game against a ghost opponent worth 0 points, so they
- * award their full point of score without inflating either tiebreak.
+ * Byes and forfeits are treated as games against a ghost opponent worth 0
+ * points: they award their score without inflating either tiebreak, and they do
+ * not count toward games played.
  */
 export function computeStandings(
   profiles: readonly PlayerProfileInput[],
@@ -52,11 +57,15 @@ export function computeStandings(
     let draws = 0;
     let losses = 0;
     let byes = 0;
+    let forfeitWins = 0;
+    let forfeitLosses = 0;
     let buchholz = 0;
     let sonnebornBerger = 0;
 
     for (const game of games) {
-      const opponentScore = scoreOf(game.opponentId);
+      // Only games actually played at a board feed the tiebreaks. A bye or a
+      // forfeit contributes nothing, so neither can inflate them.
+      const opponentScore = isPlayed(game.outcome) ? scoreOf(game.opponentId) : 0;
       buchholz += opponentScore;
 
       switch (game.outcome) {
@@ -74,6 +83,13 @@ export function computeStandings(
         case "bye":
           byes += 1;
           break;
+        case "forfeit_win":
+          forfeitWins += 1;
+          break;
+        case "forfeit_loss":
+        case "double_forfeit":
+          forfeitLosses += 1;
+          break;
       }
     }
 
@@ -85,6 +101,8 @@ export function computeStandings(
       draws,
       losses,
       byes,
+      forfeitWins,
+      forfeitLosses,
       buchholz,
       sonnebornBerger,
       rank: 0,

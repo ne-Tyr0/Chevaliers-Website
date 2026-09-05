@@ -37,15 +37,6 @@ export async function getRoundPairings(roundId: string): Promise<PairingRow[]> {
   return data ?? [];
 }
 
-export async function getCheckedInIds(roundId: string): Promise<string[]> {
-  const supabase = createPublicClient();
-  const { data } = await supabase
-    .from("round_check_ins")
-    .select("player_id")
-    .eq("round_id", roundId);
-  return (data ?? []).map((row) => row.player_id);
-}
-
 /** The club roster, active members first, alphabetically within each group. */
 export async function getRoster(): Promise<PlayerRow[]> {
   const supabase = createPublicClient();

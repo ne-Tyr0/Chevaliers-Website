@@ -1,20 +1,20 @@
-import type { StandingRow } from "@/lib/swiss";
+import type { GameRecord, StandingRow } from "@/lib/swiss";
+import { formatPoints, PlayerCard } from "./player-card";
+import { StatPopover } from "./stat-popover";
 
-/** 1.5 rather than 1.50, and "½" where a half point reads more naturally. */
-export function formatPoints(value: number): string {
-  const whole = Math.floor(value);
-  if (value - whole === 0.5) return whole === 0 ? "½" : `${whole}½`;
-  return String(value);
-}
+export { formatPoints };
 
 export function StandingsTable({
   rows,
   nameById,
+  gamesByPlayer,
   highlightId,
 }: {
   rows: readonly StandingRow[];
   nameById: ReadonlyMap<string, string>;
-  /** The viewer's own row, given a tinted background so they can find it. */
+  /** Per-player history, used to fill the hover card. */
+  gamesByPlayer: ReadonlyMap<string, GameRecord[]>;
+  /** A row to tint, so a reader can find themselves. */
   highlightId?: string;
 }) {
   return (
@@ -66,10 +66,27 @@ export function StandingsTable({
                 {row.rank}
               </td>
               <td className="py-3 pr-6">
-                {nameById.get(row.playerId) ?? "Unknown player"}
+                <StatPopover
+                  label={nameById.get(row.playerId) ?? "Unknown player"}
+                >
+                  <PlayerCard
+                    name={nameById.get(row.playerId) ?? "Unknown player"}
+                    row={row}
+                    games={gamesByPlayer.get(row.playerId) ?? []}
+                    nameById={nameById}
+                  />
+                </StatPopover>
                 {row.byes > 0 ? (
                   <span className="text-faint ml-2 text-xs">
                     {row.byes === 1 ? "bye" : `${row.byes} byes`}
+                  </span>
+                ) : null}
+                {row.forfeitWins + row.forfeitLosses > 0 ? (
+                  <span
+                    className="text-faint ml-2 text-xs"
+                    title="Games decided without play"
+                  >
+                    {row.forfeitWins + row.forfeitLosses} def.
                   </span>
                 ) : null}
               </td>

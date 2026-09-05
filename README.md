@@ -10,7 +10,7 @@ Next.js (App Router) · TypeScript · Tailwind · Supabase · Vercel.
 There are no accounts. Anyone can read the standings; officers unlock the round
 tools with a shared passcode.
 
-- **Everyone** — standings and pairings, no sign-in.
+- **Everyone** — standings and results, no sign-in.
 - **Officers** — enter the passcode once, then manage the roster, run rounds and
   enter results. The cookie lasts 30 days per device.
 
@@ -36,9 +36,11 @@ Vercel deployment. No Google Cloud, no OAuth, no SMTP.
 
 Then apply the schema. Open **SQL Editor → New query**, paste the whole of
 [`supabase/migrations/0003_public_site.sql`](supabase/migrations/0003_public_site.sql)
-and run it.
+and run it, then run
+[`supabase/migrations/0004_forfeits.sql`](supabase/migrations/0004_forfeits.sql)
+as a second query.
 
-That file is self-contained: on a fresh project it is the only migration you
+`0003` is self-contained: on a fresh project it is the only migration you
 need. If you already ran `0001` and `0002` from the earlier account-based
 design, it drops those tables and replaces them — safe now, but it would destroy
 a season you cared about, so do not re-run it later.
@@ -63,7 +65,8 @@ Open <http://localhost:3000>.
 1. Go to **Officers** and enter your passcode.
 2. Add the club to the **Roster** by name. This works with or without a season.
 3. **Start season** — name it for the term or year.
-4. **Start round 1**, check in whoever turned up, **Generate pairings**.
+4. **Start round 1**, then **Generate pairings**. Every active player is
+   paired — there is no check-in step.
 5. Enter results as boards finish, then **Close round**.
 
 ### Catching up on meetings already played
@@ -111,11 +114,40 @@ students' full names is more than you want, use a first name and last initial.
 
 ## Everyday use
 
-Check-ins lock once pairings exist. Use **Clear and re-pair** if someone arrives
-late — the round is regenerated from scratch rather than patched.
+The roster is the field: everyone active is paired every round. If somebody is
+away, either retire them beforehand or forfeit their board afterwards.
 
-Retiring a player hides them from check-in but keeps their games, because those
-games count toward other players' tiebreaks.
+Use **Clear and re-pair** to regenerate a round from scratch rather than
+patching it.
+
+Retiring a player hides them from future rounds but keeps their games, because
+those games count toward other players' tiebreaks.
+
+### Results
+
+Each board takes one of six results:
+
+| Button | Meaning |
+| --- | --- |
+| `1–0` `½–½` `0–1` | Played at the board |
+| `+ −` | Black did not appear |
+| `− +` | White did not appear |
+| `− −` | Neither appeared |
+
+A forfeit scores like a real result — a win is still a full point — but it was
+never played, so it is left out of games played and out of **both tiebreaks**.
+That stops a no-show quietly inflating whoever benefited from it. Byes work the
+same way.
+
+Closing a round with games still unreported offers to forfeit them all as
+`− −`, matching the rule that a game not completed by the end of the round is
+forfeited.
+
+### Player detail
+
+Hovering a name on the standings or results pages — or tapping it on a phone —
+opens that player's record: score, W/D/L, colour balance, both tiebreaks and
+their recent games.
 
 ## How the pairing works
 
@@ -132,6 +164,9 @@ Every later round:
 5. Assign colours, alternating from each player's previous round and keeping
    everyone's White/Black counts as level as possible.
 6. If the field is odd, the bye goes to the lowest scorer who has not had one.
+
+Two players who were paired count as having met even if the game was forfeited,
+so the engine will not keep pairing the same people around a no-show.
 
 `pairing_number` is a random integer standing in for a rating. It only ever acts
 as the sort key inside a score group, so a real rating can replace it by passing

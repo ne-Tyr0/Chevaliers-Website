@@ -15,7 +15,14 @@
 export type SeasonStatus = "active" | "completed";
 export type RoundStatus = "pending" | "in_progress" | "completed";
 export type DbPieceColor = "white" | "black";
-export type DbPairingResult = "pending" | "a_win" | "b_win" | "draw";
+export type DbPairingResult =
+  | "pending"
+  | "a_win"
+  | "b_win"
+  | "draw"
+  | "a_forfeit_win"
+  | "b_forfeit_win"
+  | "double_forfeit";
 
 export type PlayerRow = {
   id: string;
@@ -40,12 +47,6 @@ export type RoundRow = {
   round_number: number;
   played_on: string;
   status: RoundStatus;
-  created_at: string;
-};
-
-export type RoundCheckInRow = {
-  round_id: string;
-  player_id: string;
   created_at: string;
 };
 
@@ -117,20 +118,6 @@ export type Database = {
           round_number?: number;
           played_on?: string;
           status?: RoundStatus;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
-      round_check_ins: {
-        Row: RoundCheckInRow;
-        Insert: {
-          round_id: string;
-          player_id: string;
-          created_at?: string;
-        };
-        Update: {
-          round_id?: string;
-          player_id?: string;
           created_at?: string;
         };
         Relationships: [];

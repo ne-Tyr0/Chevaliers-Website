@@ -1,5 +1,6 @@
 import {
   GameRecord,
+  isPlayed,
   PieceColor,
   PlayerOutcome,
   PlayerState,
@@ -19,7 +20,13 @@ export interface CompletedPairing {
   playerBId: string | null;
   colorA: PieceColor | null;
   colorB: PieceColor | null;
-  result: "a_win" | "b_win" | "draw";
+  result:
+    | "a_win"
+    | "b_win"
+    | "draw"
+    | "a_forfeit_win"
+    | "b_forfeit_win"
+    | "double_forfeit";
 }
 
 /**
@@ -52,10 +59,7 @@ export function gameRecordsByPlayer(
       continue;
     }
 
-    const outcomeA: PlayerOutcome =
-      p.result === "draw" ? "draw" : p.result === "a_win" ? "win" : "loss";
-    const outcomeB: PlayerOutcome =
-      p.result === "draw" ? "draw" : p.result === "b_win" ? "win" : "loss";
+    const { a: outcomeA, b: outcomeB } = OUTCOMES[p.result];
 
     push(p.playerAId, {
       roundNumber: p.roundNumber,
@@ -76,6 +80,19 @@ export function gameRecordsByPlayer(
   }
   return byPlayer;
 }
+
+/** Both players' outcomes for each way a board can end. */
+const OUTCOMES: Record<
+  Exclude<CompletedPairing["result"], never>,
+  { a: PlayerOutcome; b: PlayerOutcome }
+> = {
+  a_win: { a: "win", b: "loss" },
+  b_win: { a: "loss", b: "win" },
+  draw: { a: "draw", b: "draw" },
+  a_forfeit_win: { a: "forfeit_win", b: "forfeit_loss" },
+  b_forfeit_win: { a: "forfeit_loss", b: "forfeit_win" },
+  double_forfeit: { a: "double_forfeit", b: "double_forfeit" },
+};
 
 /**
  * Collapse a player's season history into the state the pairing engine reads.
@@ -101,15 +118,18 @@ export function buildPlayerState(
   for (const g of ordered) {
     score += POINTS[g.outcome];
 
-    if (g.outcome === "bye") {
-      byeCount += 1;
-      // A bye is not a game played, and it neither breaks nor extends a color
-      // streak — the player simply wasn't at the board.
+    // A player who was paired still counts as having met their opponent, even
+    // if the game was forfeited, so the engine will not keep pairing them.
+    if (g.opponentId) opponentIds.add(g.opponentId);
+
+    if (!isPlayed(g.outcome)) {
+      if (g.outcome === "bye") byeCount += 1;
+      // Nobody sat down, so this neither counts as a game played nor breaks or
+      // extends a color streak.
       continue;
     }
 
     gamesPlayed += 1;
-    if (g.opponentId) opponentIds.add(g.opponentId);
 
     if (g.color === "white") {
       whiteCount += 1;

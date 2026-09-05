@@ -9,18 +9,47 @@
 export type PieceColor = "white" | "black";
 
 /** Result of a single board, from the perspective of the pairing row. */
-export type GameResult = "pending" | "a_win" | "b_win" | "draw";
+export type GameResult =
+  | "pending"
+  | "a_win"
+  | "b_win"
+  | "draw"
+  | "a_forfeit_win"
+  | "b_forfeit_win"
+  | "double_forfeit";
 
 /** Result of a single game from one player's own perspective. */
-export type PlayerOutcome = "win" | "loss" | "draw" | "bye";
+export type PlayerOutcome =
+  | "win"
+  | "loss"
+  | "draw"
+  | "bye"
+  | "forfeit_win"
+  | "forfeit_loss"
+  | "double_forfeit";
 
-/** Points awarded per outcome. A bye is worth a full point. */
+/** Points awarded per outcome. A bye and a forfeit win are both worth a full point. */
 export const POINTS: Record<PlayerOutcome, number> = {
   win: 1,
   loss: 0,
   draw: 0.5,
   bye: 1,
+  forfeit_win: 1,
+  forfeit_loss: 0,
+  double_forfeit: 0,
 };
+
+/**
+ * Whether an outcome came from a game actually played at a board.
+ *
+ * Byes and forfeits score, but nobody sat down: they are excluded from games
+ * played, from both tiebreaks, and from colour history. Getting this wrong
+ * quietly inflates the standings of whoever benefited from a no-show, which is
+ * exactly the kind of error nobody notices until it decides a title.
+ */
+export function isPlayed(outcome: PlayerOutcome): boolean {
+  return outcome === "win" || outcome === "loss" || outcome === "draw";
+}
 
 /**
  * One completed game as a single player experienced it.
