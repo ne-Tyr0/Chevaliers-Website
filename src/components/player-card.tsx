@@ -73,9 +73,11 @@ export function PlayerCard({
         <div className="mt-3 border-t pt-2" style={{ borderColor: "var(--rule)" }}>
           <p className="label">Recent games</p>
           <ul className="mt-1.5 space-y-1 text-xs">
-            {recent.slice(0, RECENT_GAMES).map((game) => (
+            {recent.slice(0, RECENT_GAMES).map((game, index) => (
+              // Three games against the same opponent in the same round share
+              // every field, so the position is the only unique part.
               <li
-                key={`${game.roundNumber}-${game.opponentId ?? "bye"}`}
+                key={`${game.roundNumber}-${game.opponentId ?? "bye"}-${index}`}
                 className="flex justify-between gap-3"
               >
                 <span className="text-muted truncate">

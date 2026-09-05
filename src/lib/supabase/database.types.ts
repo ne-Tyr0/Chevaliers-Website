@@ -129,7 +129,15 @@ export type Database = {
           status?: RoundStatus;
           created_at?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "rounds_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       pairings: {
         Row: PairingRow;
@@ -175,7 +183,15 @@ export type Database = {
           updated_at?: string;
           created_at?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "games_pairing_id_fkey";
+            columns: ["pairing_id"];
+            isOneToOne: false;
+            referencedRelation: "pairings";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
     Views: {

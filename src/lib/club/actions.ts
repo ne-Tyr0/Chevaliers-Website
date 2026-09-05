@@ -52,11 +52,18 @@ function backTo(path: string, error?: string): never {
 export async function unlockRole(formData: FormData) {
   const role = await signIn(String(formData.get("passcode") ?? ""));
   if (!role) redirect("/officer?error=That+passcode+is+not+right.");
+
+  // Every page renders differently once a passcode is held, and the signed-out
+  // versions are already in the router cache. Without this the redirect lands
+  // back on the passcode gate that was just cleared, which reads exactly like
+  // the passcode having been rejected.
+  revalidatePath("/", "layout");
   redirect(role === "officer" ? "/officer" : "/arbiter");
 }
 
 export async function lockRole() {
   await signOut();
+  revalidatePath("/", "layout");
   redirect("/");
 }
 

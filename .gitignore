@@ -42,3 +42,6 @@ next-env.d.ts
 
 # keep the template committed, never the real values
 !.env.example
+
+# local verification recordings
+*.webm

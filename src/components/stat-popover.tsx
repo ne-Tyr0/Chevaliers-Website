@@ -34,12 +34,6 @@ export function StatPopover({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * How the trigger was last activated. A mouse has already opened the card on
-   * hover by the time the click arrives, so letting that click toggle would
-   * shut it again the instant anyone clicked a name.
-   */
-  const pointerKind = useRef<string>("");
 
   const cancelClose = () => {
     if (closeTimer.current) {
@@ -120,12 +114,6 @@ export function StatPopover({
         type="button"
         aria-expanded={open}
         aria-haspopup="dialog"
-        onPointerDown={(event) => {
-          pointerKind.current = event.pointerType;
-        }}
-        onKeyDown={() => {
-          pointerKind.current = "keyboard";
-        }}
         onPointerEnter={(event) => {
           if (event.pointerType !== "mouse") return;
           cancelClose();
@@ -138,13 +126,12 @@ export function StatPopover({
         onFocus={() => setOpen(true)}
         onBlur={closeSoon}
         onClick={() => {
-          // Hover already governs the mouse; only touch and keyboard toggle.
-          if (pointerKind.current === "mouse") {
-            cancelClose();
-            setOpen(true);
-            return;
-          }
-          setOpen((value) => !value);
+          // Never a toggle. Every way of activating this already opens the card
+          // before the click arrives — hover on a mouse, focus on touch and
+          // keyboard — so toggling here would shut it again the instant anyone
+          // pressed it. Dismissal is by leaving, tapping away, or Escape.
+          cancelClose();
+          setOpen(true);
         }}
         className={`cursor-help text-left underline decoration-dotted underline-offset-4 ${className}`}
         style={{ textDecorationColor: "var(--rule-strong)" }}
@@ -157,6 +144,7 @@ export function StatPopover({
             <div
               ref={cardRef}
               role="dialog"
+              data-stat-card
               onPointerEnter={cancelClose}
               onPointerLeave={closeSoon}
               className="z-50 w-72 border p-4 text-sm shadow-sm"

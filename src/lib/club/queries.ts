@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createPublicClient } from "@/lib/supabase/server";
 import type {
   GameRow,
@@ -14,28 +15,53 @@ export interface MatchupView {
   games: GameRow[];
 }
 
-export async function getActiveSeason(): Promise<SeasonRow | null> {
-  const supabase = createPublicClient();
-  const { data } = await supabase
-    .from("seasons")
-    .select("*")
-    .eq("status", "active")
-    .maybeSingle();
-  return data ?? null;
-}
+/**
+ * The active season and its rounds, in a single round trip.
+ *
+ * Every page needs both, and each Supabase call costs roughly a quarter of a
+ * second from here, so fetching them separately doubled the wait for nothing.
+ * Cached per request, so asking for either costs one call in total.
+ */
+const getSeasonBundle = cache(
+  async (): Promise<{ season: SeasonRow | null; rounds: RoundRow[] }> => {
+    const supabase = createPublicClient();
+    const { data } = await supabase
+      .from("seasons")
+      .select("*, rounds(*)")
+      .eq("status", "active")
+      .maybeSingle();
 
-export async function getSeasonRounds(seasonId: string): Promise<RoundRow[]> {
-  const supabase = createPublicClient();
-  const { data } = await supabase
-    .from("rounds")
-    .select("*")
-    .eq("season_id", seasonId)
-    .order("round_number", { ascending: true });
-  return data ?? [];
-}
+    if (!data) return { season: null, rounds: [] };
+    const { rounds, ...season } = data;
+    return {
+      season,
+      rounds: [...rounds].sort((a, b) => a.round_number - b.round_number),
+    };
+  },
+);
+
+export const getActiveSeason = cache(async (): Promise<SeasonRow | null> => {
+  return (await getSeasonBundle()).season;
+});
+
+export const getSeasonRounds = cache(
+  async (seasonId: string): Promise<RoundRow[]> => {
+    const bundle = await getSeasonBundle();
+    if (bundle.season?.id === seasonId) return bundle.rounds;
+
+    // A season other than the active one: rare, so it pays its own round trip.
+    const supabase = createPublicClient();
+    const { data } = await supabase
+      .from("rounds")
+      .select("*")
+      .eq("season_id", seasonId)
+      .order("round_number", { ascending: true });
+    return data ?? [];
+  },
+);
 
 /** The club roster, active members first, alphabetically within each group. */
-export async function getRoster(): Promise<PlayerRow[]> {
+export const getRoster = cache(async (): Promise<PlayerRow[]> => {
   const supabase = createPublicClient();
   const { data } = await supabase
     .from("players")
@@ -43,7 +69,7 @@ export async function getRoster(): Promise<PlayerRow[]> {
     .order("is_active", { ascending: false })
     .order("full_name", { ascending: true });
   return data ?? [];
-}
+});
 
 export interface SeasonHistory {
   rounds: RoundRow[];
@@ -54,69 +80,60 @@ export interface SeasonHistory {
   roundNumberById: Map<string, number>;
 }
 
+/** Matchups and their games in one round trip, rather than one then the other. */
+const PAIRING_WITH_GAMES = "*, games(*)";
+
+function toViews(
+  rows: readonly (PairingRow & { games: GameRow[] })[],
+): MatchupView[] {
+  return rows.map(({ games, ...pairing }) => ({
+    pairing,
+    games: [...games].sort((a, b) => a.game_number - b.game_number),
+  }));
+}
+
 /**
  * Load the season in the shape the pairing engine and standings expect.
  *
- * Three queries rather than nested joins, so nothing depends on relationship
- * metadata in the hand-written types.
+ * Two round trips, not three: the games come back nested inside their
+ * matchups. Each hop is a network call to Supabase, and on these pages that
+ * latency is the whole cost.
  */
-export async function getSeasonHistory(seasonId: string): Promise<SeasonHistory> {
-  const supabase = createPublicClient();
-  const rounds = await getSeasonRounds(seasonId);
-  const roundNumberById = new Map(rounds.map((r) => [r.id, r.round_number]));
+export const getSeasonHistory = cache(
+  async (seasonId: string): Promise<SeasonHistory> => {
+    const supabase = createPublicClient();
+    const rounds = await getSeasonRounds(seasonId);
+    const roundNumberById = new Map(rounds.map((r) => [r.id, r.round_number]));
 
-  if (rounds.length === 0) {
-    return { rounds, matchupViews: [], matchups: [], roundNumberById };
-  }
+    if (rounds.length === 0) {
+      return { rounds, matchupViews: [], matchups: [], roundNumberById };
+    }
 
-  const { data: pairings } = await supabase
-    .from("pairings")
-    .select("*")
-    .in(
-      "round_id",
-      rounds.map((r) => r.id),
-    );
+    const { data } = await supabase
+      .from("pairings")
+      .select(PAIRING_WITH_GAMES)
+      .in(
+        "round_id",
+        rounds.map((r) => r.id),
+      );
 
-  const allPairings = pairings ?? [];
-  const gamesByPairing = await getGamesFor(allPairings.map((p) => p.id));
-
-  const matchupViews = allPairings
-    .map((pairing) => ({ pairing, games: gamesByPairing.get(pairing.id) ?? [] }))
-    .sort(
+    const matchupViews = toViews(data ?? []).sort(
       (a, b) =>
         (roundNumberById.get(a.pairing.round_id) ?? 0) -
           (roundNumberById.get(b.pairing.round_id) ?? 0) ||
         a.pairing.board_number - b.pairing.board_number,
     );
 
-  return {
-    rounds,
-    matchupViews,
-    matchups: matchupViews.map((view) =>
-      toCompletedMatchup(view, roundNumberById.get(view.pairing.round_id) ?? 0),
-    ),
-    roundNumberById,
-  };
-}
-
-async function getGamesFor(pairingIds: readonly string[]) {
-  const byPairing = new Map<string, GameRow[]>();
-  if (pairingIds.length === 0) return byPairing;
-
-  const supabase = createPublicClient();
-  const { data } = await supabase
-    .from("games")
-    .select("*")
-    .in("pairing_id", pairingIds)
-    .order("game_number", { ascending: true });
-
-  for (const game of data ?? []) {
-    const list = byPairing.get(game.pairing_id);
-    if (list) list.push(game);
-    else byPairing.set(game.pairing_id, [game]);
-  }
-  return byPairing;
-}
+    return {
+      rounds,
+      matchupViews,
+      matchups: matchupViews.map((view) =>
+        toCompletedMatchup(view, roundNumberById.get(view.pairing.round_id) ?? 0),
+      ),
+      roundNumberById,
+    };
+  },
+);
 
 /**
  * Convert to the engine's shape, dropping games that have no result yet.
@@ -144,39 +161,29 @@ export function toCompletedMatchup(
   };
 }
 
-export async function getRoundMatchups(roundId: string): Promise<MatchupView[]> {
-  const supabase = createPublicClient();
-  const { data } = await supabase
-    .from("pairings")
-    .select("*")
-    .eq("round_id", roundId)
-    .order("board_number", { ascending: true });
+export const getRoundMatchups = cache(
+  async (roundId: string): Promise<MatchupView[]> => {
+    const supabase = createPublicClient();
+    const { data } = await supabase
+      .from("pairings")
+      .select(PAIRING_WITH_GAMES)
+      .eq("round_id", roundId)
+      .order("board_number", { ascending: true });
+    return toViews(data ?? []);
+  },
+);
 
-  const pairings = data ?? [];
-  const gamesByPairing = await getGamesFor(pairings.map((p) => p.id));
-  return pairings.map((pairing) => ({
-    pairing,
-    games: gamesByPairing.get(pairing.id) ?? [],
-  }));
-}
-
-export async function getMatchup(pairingId: string): Promise<MatchupView | null> {
-  const supabase = createPublicClient();
-  const { data: pairing } = await supabase
-    .from("pairings")
-    .select("*")
-    .eq("id", pairingId)
-    .maybeSingle();
-  if (!pairing) return null;
-
-  const { data: games } = await supabase
-    .from("games")
-    .select("*")
-    .eq("pairing_id", pairingId)
-    .order("game_number", { ascending: true });
-
-  return { pairing, games: games ?? [] };
-}
+export const getMatchup = cache(
+  async (pairingId: string): Promise<MatchupView | null> => {
+    const supabase = createPublicClient();
+    const { data } = await supabase
+      .from("pairings")
+      .select(PAIRING_WITH_GAMES)
+      .eq("id", pairingId)
+      .maybeSingle();
+    return data ? (toViews([data])[0] ?? null) : null;
+  },
+);
 
 /**
  * The players a season's standings should list: everyone who has been paired at

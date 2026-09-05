@@ -52,7 +52,7 @@ export async function currentRole(): Promise<ClubRole | null> {
 
   try {
     const expected = expectedToken(role);
-    return expected && matches(token, expected) ? role : null;
+    return expected !== null && matches(token, expected) ? role : null;
   } catch {
     // The passcode for that role is not configured, so nobody holds it.
     return null;
