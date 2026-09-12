@@ -157,6 +157,15 @@ async function SeasonPanel({
     0,
   );
 
+  // Hand-pairing 22 boards out of 44 names is unworkable if the list never
+  // shrinks, so offer only the players who do not yet have a game this round.
+  const seated = new Set<string>();
+  for (const { pairing } of matchups) {
+    seated.add(pairing.player_a_id);
+    if (pairing.player_b_id) seated.add(pairing.player_b_id);
+  }
+  const unpaired = active.filter((player) => !seated.has(player.id));
+
   return (
     <>
       <p className="text-muted mt-4 text-sm">
@@ -230,7 +239,11 @@ async function SeasonPanel({
           )}
 
           {currentRound.status !== "completed" ? (
-            <ManualMatchupForm roundId={currentRound.id} players={active} />
+            <ManualMatchupForm
+              roundId={currentRound.id}
+              players={unpaired}
+              totalActive={active.length}
+            />
           ) : null}
         </Section>
       ) : null}
@@ -424,43 +437,68 @@ function MatchupList({
 function ManualMatchupForm({
   roundId,
   players,
+  totalActive,
 }: {
   roundId: string;
+  /** Only those without a game in this round — the list shrinks as you pair. */
   players: PlayerRow[];
+  totalActive: number;
 }) {
   return (
     <div className="mt-10 border-t pt-6" style={{ borderColor: "var(--rule)" }}>
-      <h3 className="label">Add a matchup by hand</h3>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="label">Add a matchup by hand</h3>
+        <span className="text-faint text-xs">
+          {players.length === 0
+            ? `all ${totalActive} paired`
+            : `${players.length} of ${totalActive} still unpaired`}
+        </span>
+      </div>
       <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
-        For meetings played before the club used this site. Add the matchup,
-        then open it to enter its three games.
+        Officers choose the two players themselves, instead of letting the
+        engine pair the round. Only players without a game this round are
+        listed, so the choices shrink as you go. Add the matchup, then open it
+        to enter its three games.
       </p>
 
-      <form
-        action={addManualMatchup}
-        className="mt-4 flex flex-wrap items-end gap-3"
-      >
-        <input type="hidden" name="roundId" value={roundId} />
+      {players.length === 0 ? (
+        <p className="text-muted mt-4 text-sm">
+          Everyone active has a game this round. Remove a matchup above to pair
+          someone differently.
+        </p>
+      ) : (
+        <>
+          <form
+            action={addManualMatchup}
+            className="mt-4 flex flex-wrap items-end gap-3"
+          >
+            <input type="hidden" name="roundId" value={roundId} />
 
-        <SelectField label="Player" name="playerAId" id="player-a" required>
-          {players.map((player) => (
-            <option key={player.id} value={player.id}>
-              {player.full_name}
-            </option>
-          ))}
-        </SelectField>
+            <SelectField label="Player" name="playerAId" id="player-a" required>
+              {players.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {player.full_name}
+                </option>
+              ))}
+            </SelectField>
 
-        <SelectField label="Opponent" name="playerBId" id="player-b">
-          <option value="bye">No opponent (bye)</option>
-          {players.map((player) => (
-            <option key={player.id} value={player.id}>
-              {player.full_name}
-            </option>
-          ))}
-        </SelectField>
+            <SelectField label="Opponent" name="playerBId" id="player-b">
+              <option value="bye">No opponent (bye)</option>
+              {players.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {player.full_name}
+                </option>
+              ))}
+            </SelectField>
 
-        <SubmitButton>Add matchup</SubmitButton>
-      </form>
+            <SubmitButton>Add matchup</SubmitButton>
+          </form>
+
+          <p className="text-faint mt-4 max-w-prose text-xs leading-relaxed">
+            Still to pair: {players.map((p) => p.full_name).join(", ")}.
+          </p>
+        </>
+      )}
     </div>
   );
 }
