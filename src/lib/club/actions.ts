@@ -5,6 +5,9 @@ import { redirect } from "next/navigation";
 import {
   assertCanEnterResults,
   assertOfficer,
+  canReviewPastRounds,
+  endReview,
+  grantReview,
   signIn,
   signOut,
 } from "@/lib/officer/session";
@@ -16,7 +19,7 @@ import {
   PairingError,
   pairRound,
 } from "@/lib/swiss";
-import { getActiveSeason, getSeasonHistory } from "./queries";
+import { getActiveSeason, getRoundForGame, getSeasonHistory } from "./queries";
 
 /** Upper bound for the placeholder pairing number. Wide enough that ties are rare. */
 const PAIRING_NUMBER_RANGE = 1_000_000;
@@ -167,11 +170,16 @@ export async function startRound(formData?: FormData) {
   const playedOnRaw = String(formData?.get("playedOn") ?? "").trim();
   const playedOn = /^\d{4}-\d{2}-\d{2}$/.test(playedOnRaw) ? playedOnRaw : undefined;
 
+  // Unticked for a round being entered from paper, where nobody wrote down who
+  // had White. The checkbox is absent from the form entirely when unticked.
+  const tracksColors = String(formData?.get("tracksColors") ?? "") === "on";
+
   const supabase = createAdminClient();
   const { error } = await supabase.from("rounds").insert({
     season_id: season.id,
     round_number: nextNumber,
     status: "pending",
+    tracks_colors: tracksColors,
     ...(playedOn ? { played_on: playedOn } : {}),
   });
   if (error) backToOfficer(error.message);
@@ -390,6 +398,29 @@ export async function clearPairings(formData: FormData) {
 // Game results — officers and arbiters
 // ---------------------------------------------------------------------------
 
+/**
+ * Refuse to touch a game in a closed round without the review window open.
+ *
+ * Scores and both tiebreaks are derived from games, so editing a finished round
+ * reshuffles the whole season. Requiring the passcode again makes that a
+ * deliberate act rather than something an unattended laptop allows. Arbiters
+ * never qualify, because the review window is officers-only.
+ *
+ * Returns the round, so callers can use its settings.
+ */
+async function assertGameEditable(gameId: string, returnTo: string) {
+  const round = await getRoundForGame(gameId);
+  if (!round) backTo(returnTo, "That game no longer exists.");
+
+  if (round.status === "completed" && !(await canReviewPastRounds())) {
+    backTo(
+      returnTo,
+      `Round ${round.round_number} is closed. Re-enter the officer passcode to change it.`,
+    );
+  }
+  return round;
+}
+
 export async function recordGame(formData: FormData) {
   const role = await assertCanEnterResults();
   const gameId = String(formData.get("gameId") ?? "");
@@ -399,6 +430,7 @@ export async function recordGame(formData: FormData) {
   if (!gameId || !RESULTS.includes(result as DbPairingResult)) {
     backTo(returnTo, "That is not a valid result.");
   }
+  await assertGameEditable(gameId, returnTo);
 
   const supabase = createAdminClient();
   const { error } = await supabase
@@ -431,6 +463,14 @@ export async function setGameColor(formData: FormData) {
     backTo(returnTo, "That is not a valid colour.");
   }
 
+  const round = await assertGameEditable(gameId, returnTo);
+  if (!round.tracks_colors) {
+    backTo(
+      returnTo,
+      `Round ${round.round_number} does not record colours. Turn that on for the round first.`,
+    );
+  }
+
   const supabase = createAdminClient();
   const { error } = await supabase
     .from("games")
@@ -445,6 +485,50 @@ export async function setGameColor(formData: FormData) {
   revalidatePath(returnTo);
   revalidatePath("/standings");
   revalidatePath("/results");
+  backTo(returnTo);
+}
+
+/**
+ * Turn colour recording on or off for a round that is still open.
+ *
+ * Switching it off leaves any colours already entered in place rather than
+ * wiping them; they simply stop being asked for. Nothing reads a colour that a
+ * round no longer tracks, so stale values are inert, and deleting them would
+ * throw away correct information over a change of mind.
+ */
+export async function setRoundColorTracking(formData: FormData) {
+  await assertOfficer();
+  const roundId = String(formData.get("roundId") ?? "");
+  const tracks = String(formData.get("tracks") ?? "") === "true";
+  const returnTo = safePath(formData.get("returnTo"), "/officer");
+  if (!roundId) backTo(returnTo, "Missing round.");
+
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("rounds")
+    .update({ tracks_colors: tracks })
+    .eq("id", roundId)
+    .neq("status", "completed");
+  if (error) backTo(returnTo, error.message);
+
+  revalidatePath(returnTo);
+  revalidatePath("/officer");
+  revalidatePath("/results");
+  backTo(returnTo);
+}
+
+/** Re-check the officer passcode and open the window for editing closed rounds. */
+export async function openReview(formData: FormData) {
+  await assertOfficer();
+  const returnTo = safePath(formData.get("returnTo"), "/officer");
+  const granted = await grantReview(String(formData.get("passcode") ?? ""));
+  backTo(returnTo, granted ? undefined : "That passcode is not right.");
+}
+
+export async function closeReview(formData: FormData) {
+  const returnTo = safePath(formData.get("returnTo"), "/officer");
+  await endReview();
+  revalidatePath(returnTo);
   backTo(returnTo);
 }
 

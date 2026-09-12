@@ -100,6 +100,80 @@ export async function signIn(submitted: string): Promise<ClubRole | null> {
 
 export async function signOut(): Promise<void> {
   (await cookies()).delete(COOKIE_NAME);
+  (await cookies()).delete(REVIEW_COOKIE);
+}
+
+// ---------------------------------------------------------------------------
+// Reviewing closed rounds
+// ---------------------------------------------------------------------------
+//
+// Correcting a finished round rewrites history: scores and both tiebreaks are
+// derived from games, so fixing a round 1 result reshuffles the whole season.
+// That deserves more than the month-long officer cookie behind it, so it takes
+// the passcode again and the permission lapses on its own shortly after.
+
+const REVIEW_COOKIE = "chevaliers_review";
+const REVIEW_WINDOW_MS = 15 * 60 * 1000;
+
+/** Signs an expiry so the browser cannot simply extend its own permission. */
+function reviewToken(expiresAt: number): string {
+  return createHmac("sha256", officerPasscode())
+    .update(`review-${expiresAt}`)
+    .digest("hex");
+}
+
+/**
+ * Re-check the officer passcode and open the review window.
+ * Returns the moment it lapses, or null if the passcode was wrong.
+ */
+export async function grantReview(submitted: string): Promise<number | null> {
+  if (!(await isOfficer())) return null;
+  if (!matches(submitted, officerPasscode())) return null;
+
+  const expiresAt = Date.now() + REVIEW_WINDOW_MS;
+  (await cookies()).set(REVIEW_COOKIE, `${expiresAt}.${reviewToken(expiresAt)}`, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: Math.ceil(REVIEW_WINDOW_MS / 1000),
+  });
+  return expiresAt;
+}
+
+/** When the review window lapses, or null if it is not open. */
+export async function reviewExpiresAt(): Promise<number | null> {
+  if (!(await isOfficer())) return null;
+
+  const raw = (await cookies()).get(REVIEW_COOKIE)?.value;
+  if (!raw) return null;
+
+  const separator = raw.indexOf(".");
+  if (separator < 0) return null;
+  const expiresAt = Number(raw.slice(0, separator));
+  const token = raw.slice(separator + 1);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+
+  try {
+    return matches(token, reviewToken(expiresAt)) ? expiresAt : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function canReviewPastRounds(): Promise<boolean> {
+  return (await reviewExpiresAt()) !== null;
+}
+
+export async function endReview(): Promise<void> {
+  (await cookies()).delete(REVIEW_COOKIE);
+}
+
+/** Guard for edits to a round that has already been closed. */
+export async function assertCanReviewPastRounds(): Promise<void> {
+  if (!(await canReviewPastRounds())) {
+    throw new Error("Re-enter the officer passcode to change a closed round.");
+  }
 }
 
 /**

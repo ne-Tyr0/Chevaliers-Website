@@ -38,11 +38,17 @@ export function MatchupGames({
   nameA,
   nameB,
   returnTo,
+  tracksColors = true,
+  readOnly = false,
 }: {
   view: MatchupView;
   nameA: string;
   nameB: string;
   returnTo: string;
+  /** False for a round entered from paper, where nobody noted who had White. */
+  tracksColors?: boolean;
+  /** True for a closed round with no review window open. */
+  readOnly?: boolean;
 }) {
   if (view.pairing.player_b_id === null) {
     return (
@@ -69,50 +75,68 @@ export function MatchupGames({
               <span className="label">Game {game.game_number}</span>
 
               <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-faint text-xs">White</span>
-                  <ColorButton
-                    gameId={game.id}
-                    colorA="white"
-                    label={nameA}
-                    selected={whiteIsA}
-                    returnTo={returnTo}
-                  />
-                  <ColorButton
-                    gameId={game.id}
-                    colorA="black"
-                    label={nameB}
-                    selected={whiteIsB}
-                    returnTo={returnTo}
-                  />
-                </div>
+                {tracksColors ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-faint text-xs">White</span>
+                    {readOnly ? (
+                      <span className="text-muted text-xs">
+                        {whiteIsA ? nameA : whiteIsB ? nameB : "not recorded"}
+                      </span>
+                    ) : (
+                      <>
+                        <ColorButton
+                          gameId={game.id}
+                          colorA="white"
+                          label={nameA}
+                          selected={whiteIsA}
+                          returnTo={returnTo}
+                        />
+                        <ColorButton
+                          gameId={game.id}
+                          colorA="black"
+                          label={nameB}
+                          selected={whiteIsB}
+                          returnTo={returnTo}
+                        />
+                      </>
+                    )}
+                  </div>
+                ) : null}
 
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {PLAYED_RESULTS.map((option) => (
-                    <ResultButton
-                      key={option.value}
-                      gameId={game.id}
-                      value={option.value}
-                      label={option.label}
-                      selected={game.result === option.value}
-                      returnTo={returnTo}
-                    />
-                  ))}
-                  <span aria-hidden className="text-faint px-0.5 text-xs">
-                    |
+                {readOnly ? (
+                  <span className="text-sm tabular-nums">
+                    {[...PLAYED_RESULTS, ...FORFEIT_RESULTS].find(
+                      (o) => o.value === game.result,
+                    )?.label ?? "not reported"}
                   </span>
-                  {FORFEIT_RESULTS.map((option) => (
-                    <ResultButton
-                      key={option.value}
-                      gameId={game.id}
-                      value={option.value}
-                      label={option.label}
-                      selected={game.result === option.value}
-                      returnTo={returnTo}
-                      muted
-                    />
-                  ))}
-                </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {PLAYED_RESULTS.map((option) => (
+                      <ResultButton
+                        key={option.value}
+                        gameId={game.id}
+                        value={option.value}
+                        label={option.label}
+                        selected={game.result === option.value}
+                        returnTo={returnTo}
+                      />
+                    ))}
+                    <span aria-hidden className="text-faint px-0.5 text-xs">
+                      |
+                    </span>
+                    {FORFEIT_RESULTS.map((option) => (
+                      <ResultButton
+                        key={option.value}
+                        gameId={game.id}
+                        value={option.value}
+                        label={option.label}
+                        selected={game.result === option.value}
+                        returnTo={returnTo}
+                        muted
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

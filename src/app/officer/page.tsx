@@ -23,11 +23,13 @@ import {
   type MatchupView,
 } from "@/lib/club/queries";
 import { currentRole } from "@/lib/officer/session";
-import type { PlayerRow } from "@/lib/supabase/database.types";
+import type { PlayerRow, RoundRow } from "@/lib/supabase/database.types";
 
 export const metadata: Metadata = { title: "Officers" };
 
-export default async function OfficerPage({ searchParams }: PageProps<"/officer">) {
+export default async function OfficerPage({
+  searchParams,
+}: PageProps<"/officer">) {
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : null;
   const role = await currentRole();
@@ -71,8 +73,9 @@ function PasscodeGate({ error }: { error: string | null }) {
       <Pawn className="mb-8 h-8 w-auto" />
       <h1 className="text-3xl">Club tools</h1>
       <p className="text-muted mt-3 text-sm leading-relaxed">
-        Officers run rounds and manage the roster. Arbiters report results in the
-        open round. Standings and results are open to everyone and need nothing.
+        Officers run rounds and manage the roster. Arbiters report results in
+        the open round. Standings and results are open to everyone and need
+        nothing.
       </p>
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
@@ -106,11 +109,14 @@ function NewSeasonForm() {
   return (
     <section className="mt-10">
       <p className="text-muted max-w-prose text-sm leading-relaxed">
-        No season is running. Start one to begin pairing rounds — a season is one
-        continuous Swiss event, so you only need a new one at the start of a term
-        or year.
+        No season is running. Start one to begin pairing rounds — a season is
+        one continuous Swiss event, so you only need a new one at the start of a
+        term or year.
       </p>
-      <form action={createSeason} className="mt-6 flex flex-wrap items-center gap-3">
+      <form
+        action={createSeason}
+        className="mt-6 flex flex-wrap items-center gap-3"
+      >
         <label className="sr-only" htmlFor="season-name">
           Season name
         </label>
@@ -146,7 +152,8 @@ async function SeasonPanel({
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
 
   const outstanding = matchups.reduce(
-    (sum, view) => sum + view.games.filter((g) => g.result === "pending").length,
+    (sum, view) =>
+      sum + view.games.filter((g) => g.result === "pending").length,
     0,
   );
 
@@ -158,23 +165,42 @@ async function SeasonPanel({
       </p>
 
       {!currentRound || currentRound.status === "completed" ? (
-        <form action={startRound} className="mt-8 flex flex-wrap items-end gap-3">
-          <div>
-            <label className="label block" htmlFor="played-on">
-              Date played
+        <>
+          <form
+            action={startRound}
+            className="mt-8 flex flex-wrap items-end gap-3"
+          >
+            <div>
+              <label className="label block" htmlFor="played-on">
+                Date played
+              </label>
+              <input
+                id="played-on"
+                name="playedOn"
+                type="date"
+                className="mt-2 border bg-transparent px-3 py-2 text-sm"
+                style={{ borderColor: "var(--rule-strong)" }}
+              />
+            </div>
+            <label className="flex items-center gap-2 pb-2.5 text-sm">
+              <input
+                type="checkbox"
+                name="tracksColors"
+                defaultChecked
+                className="size-4 accent-[var(--color-ink)]"
+              />
+              <span className="text-muted">Record who had White</span>
             </label>
-            <input
-              id="played-on"
-              name="playedOn"
-              type="date"
-              className="mt-2 border bg-transparent px-3 py-2 text-sm"
-              style={{ borderColor: "var(--rule-strong)" }}
-            />
-          </div>
-          <SubmitButton>
-            Start round {(currentRound?.round_number ?? 0) + 1}
-          </SubmitButton>
-        </form>
+            <SubmitButton>
+              Start round {(currentRound?.round_number ?? 0) + 1}
+            </SubmitButton>
+          </form>
+          <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
+            Untick the colours box for a round being entered from paper, where
+            nobody recorded who had White. It can be changed while the round is
+            still open.
+          </p>
+        </>
       ) : null}
 
       {currentRound ? (
@@ -185,8 +211,8 @@ async function SeasonPanel({
           {matchups.length === 0 ? (
             <>
               <Note>
-                Every active player is paired into a matchup of three games. With
-                an odd number one bye is given automatically.
+                Every active player is paired into a matchup of three games.
+                With an odd number one bye is given automatically.
               </Note>
               <form action={generatePairings} className="mt-5">
                 <input type="hidden" name="roundId" value={currentRound.id} />
@@ -208,7 +234,47 @@ async function SeasonPanel({
           ) : null}
         </Section>
       ) : null}
+
+      {history.rounds.length > 0 ? (
+        <RoundHistory rounds={history.rounds} />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * Every round of the season, newest first, as a way back into the ones already
+ * closed. Correcting a finished round asks for the passcode again on the way in.
+ */
+function RoundHistory({ rounds }: { rounds: RoundRow[] }) {
+  const ordered = [...rounds].sort((a, b) => b.round_number - a.round_number);
+
+  return (
+    <Section title="All rounds" note={`${rounds.length} this season`}>
+      <ul className="mt-4">
+        {ordered.map((round) => (
+          <li
+            key={round.id}
+            className="border-b"
+            style={{ borderColor: "var(--rule)" }}
+          >
+            <Link
+              href={`/officer/round/${round.id}`}
+              className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm transition-colors hover:bg-cream-deep"
+            >
+              <span className="w-20">Round {round.round_number}</span>
+              <span className="text-muted flex-1">{round.played_on}</span>
+              {!round.tracks_colors ? (
+                <span className="text-faint text-xs">no colours</span>
+              ) : null}
+              <span className="text-faint w-24 text-right text-xs">
+                {round.status.replace("_", " ")}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
@@ -231,9 +297,11 @@ function MatchupList({
     <>
       {rematches > 0 ? (
         <Note>
-          {rematches === 1 ? "One matchup repeats" : `${rematches} matchups repeat`}{" "}
-          an earlier meeting. That only happens when no other pairing of this round
-          was possible.
+          {rematches === 1
+            ? "One matchup repeats"
+            : `${rematches} matchups repeat`}{" "}
+          an earlier meeting. That only happens when no other pairing of this
+          round was possible.
         </Note>
       ) : null}
 
@@ -286,7 +354,11 @@ function MatchupList({
 
               {roundStatus !== "completed" ? (
                 <form action={deleteMatchup}>
-                  <input type="hidden" name="pairingId" value={view.pairing.id} />
+                  <input
+                    type="hidden"
+                    name="pairingId"
+                    value={view.pairing.id}
+                  />
                   <button
                     type="submit"
                     aria-label={`Remove board ${view.pairing.board_number}`}
@@ -360,8 +432,8 @@ function ManualMatchupForm({
     <div className="mt-10 border-t pt-6" style={{ borderColor: "var(--rule)" }}>
       <h3 className="label">Add a matchup by hand</h3>
       <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
-        For meetings played before the club used this site. Add the matchup, then
-        open it to enter its three games.
+        For meetings played before the club used this site. Add the matchup,
+        then open it to enter its three games.
       </p>
 
       <form
@@ -434,7 +506,10 @@ async function RosterSection() {
 
   return (
     <Section title="Roster" note={`${active} active`}>
-      <form action={addPlayer} className="mt-4 flex flex-wrap items-center gap-3">
+      <form
+        action={addPlayer}
+        className="mt-4 flex flex-wrap items-center gap-3"
+      >
         <label className="sr-only" htmlFor="player-name">
           Player name
         </label>
@@ -457,10 +532,14 @@ async function RosterSection() {
               className="flex items-center justify-between border-b py-2"
               style={{ borderColor: "var(--rule)" }}
             >
-              <span className={player.is_active ? "text-sm" : "text-faint text-sm"}>
+              <span
+                className={player.is_active ? "text-sm" : "text-faint text-sm"}
+              >
                 {player.full_name}
                 {player.grade ? (
-                  <span className="text-faint ml-2 text-xs">{player.grade}</span>
+                  <span className="text-faint ml-2 text-xs">
+                    {player.grade}
+                  </span>
                 ) : null}
                 {!player.is_active ? (
                   <span className="text-faint ml-2 text-xs">retired</span>
@@ -487,9 +566,9 @@ async function RosterSection() {
 
       <p className="text-faint mt-4 max-w-prose text-xs leading-relaxed">
         Retiring a player hides them from future rounds but keeps their games,
-        because those games are part of other players&rsquo; tiebreaks. Names appear
-        on the public standings page, so use whatever form the club is comfortable
-        publishing.
+        because those games are part of other players&rsquo; tiebreaks. Names
+        appear on the public standings page, so use whatever form the club is
+        comfortable publishing.
       </p>
     </Section>
   );
@@ -519,7 +598,9 @@ function Note({ children }: { children: React.ReactNode }) {
   return (
     <div className="mt-4 flex items-start gap-3">
       <Pawn className="text-faint mt-0.5 h-4 w-auto shrink-0" />
-      <p className="text-muted max-w-prose text-sm leading-relaxed">{children}</p>
+      <p className="text-muted max-w-prose text-sm leading-relaxed">
+        {children}
+      </p>
     </div>
   );
 }

@@ -94,14 +94,15 @@ export default async function ResultsPage() {
           hover a name for that player&rsquo;s record.
         </p>
 
-        <p className="text-faint mt-3 max-w-prose text-xs leading-relaxed">
-          Which player had White is recorded from the first round run on this
-          site onwards. Earlier games were played before anyone was noting it
-          down, so they show as &ldquo;colours not recorded&rdquo; rather than
-          being guessed at. Nothing else depends on it: scores, standings and
-          both tiebreaks are unaffected, and colour balancing simply starts from
-          the first round that has the information.
-        </p>
+        {history.rounds.some((round) => !round.tracks_colors) ? (
+          <p className="text-faint mt-3 max-w-prose text-xs leading-relaxed">
+            Some rounds were played before anyone was noting down who had White,
+            and are marked below. Rather than guess, those games simply do not
+            record it. Nothing else depends on it: scores, standings and both
+            tiebreaks are unaffected, and colour balancing works from the rounds
+            that do have the information.
+          </p>
+        ) : null}
 
         {rounds.length === 0 ? (
           <Empty>
@@ -120,6 +121,7 @@ export default async function ResultsPage() {
                   <span className="text-faint text-xs">
                     {formatDate(round.played_on)}
                     {round.status !== "completed" ? " · in progress" : ""}
+                    {round.tracks_colors ? "" : " · colours not recorded"}
                   </span>
                 </div>
 
@@ -128,6 +130,7 @@ export default async function ResultsPage() {
                     <Matchup
                       key={view.pairing.id}
                       view={view}
+                      tracksColors={round.tracks_colors}
                       nameById={nameById}
                       rowById={rowById}
                       gamesByPlayer={gamesByPlayer}
@@ -145,11 +148,13 @@ export default async function ResultsPage() {
 
 function Matchup({
   view,
+  tracksColors,
   nameById,
   rowById,
   gamesByPlayer,
 }: {
   view: MatchupView;
+  tracksColors: boolean;
   nameById: ReadonlyMap<string, string>;
   rowById: ReadonlyMap<string, StandingRow>;
   gamesByPlayer: ReadonlyMap<string, GameRecord[]>;
@@ -237,11 +242,15 @@ function Matchup({
                 Game {game.game_number}
               </span>
               <span className="text-muted min-w-0 flex-1">
-                {game.color_a === "white"
-                  ? `${nameA} as White`
-                  : game.color_a === "black"
-                    ? `${nameB} as White`
-                    : "Colours not recorded"}
+                {/* A round that never tracked colours says so in its heading;
+                    repeating it on all three games would just be noise. */}
+                {!tracksColors
+                  ? ""
+                  : game.color_a === "white"
+                    ? `${nameA} as White`
+                    : game.color_a === "black"
+                      ? `${nameB} as White`
+                      : "Colours not recorded"}
               </span>
               <span
                 className={

@@ -184,6 +184,38 @@ Hovering a name on the standings or results pages — or tapping it on a phone �
 opens that player's record: score, W/D/L, colour balance, both tiebreaks and
 their recent games.
 
+## Colours are per round
+
+Ticking **Record who had White** when opening a round decides whether it asks
+for colours at all. Leave it unticked for a round being keyed in from paper,
+where nobody wrote them down — those games stay blank instead of showing
+"colours not recorded" on every line, and the round says so once in its heading.
+
+It can be changed while a round is still open. Turning it off keeps any colours
+already entered rather than wiping them: nothing reads a colour from a round
+that does not track them, so the values are inert, and deleting correct
+information over a change of mind would be worse.
+
+Scores and both tiebreaks never involve colour, so a round without it is not
+second-class. The only thing affected is colour balancing in future pairings,
+which works from whichever rounds do have the information.
+
+## Going back over a closed round
+
+**All rounds** in officer tools lists every round of the season. Opening a
+closed one shows it as it stands and asks for the officer passcode again before
+anything can be changed.
+
+That second step is there because scores and both tiebreaks are *derived* from
+games rather than stored, so correcting a round 1 result moves every score and
+tiebreak after it. The permission lasts fifteen minutes and then lapses by
+itself; **Lock again now** ends it early. Arbiters never get it.
+
+What can be corrected is results and colours. **Pairings cannot** — changing who
+faced whom in a round that has been played would invent games nobody sat down
+for. Editing a closed round leaves it closed, so it never blocks the next round
+from starting.
+
 ## How the pairing works
 
 Round 1 shuffles the checked-in players at random and assigns each of them a

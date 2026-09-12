@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { formatMatchupScore, MatchupGames } from "@/components/matchup-games";
+import { ReviewBanner, ReviewGate } from "@/components/review-gate";
 import { SiteHeader } from "@/components/site-header";
-import { getMatchup, getRoster } from "@/lib/club/queries";
-import { currentRole } from "@/lib/officer/session";
+import { getMatchup, getRound, getRoster } from "@/lib/club/queries";
+import { currentRole, reviewExpiresAt } from "@/lib/officer/session";
 
 export const metadata: Metadata = { title: "Matchup" };
 
@@ -20,6 +21,13 @@ export default async function MatchupPage({
 
   const [view, roster] = await Promise.all([getMatchup(pairingId), getRoster()]);
   if (!view) notFound();
+
+  const round = await getRound(view.pairing.round_id);
+  const reviewUntil = await reviewExpiresAt();
+  // A closed round is readable by anyone holding a passcode, but only editable
+  // inside the review window, which is officers-only.
+  const closed = round?.status === "completed";
+  const readOnly = closed && reviewUntil === null;
 
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
   const nameA = nameById.get(view.pairing.player_a_id) ?? "Unknown player";
@@ -69,7 +77,21 @@ export default async function MatchupPage({
           </p>
         ) : null}
 
-        <MatchupGames view={view} nameA={nameA} nameB={nameB} returnTo={returnTo} />
+        {closed && readOnly ? (
+          <ReviewGate returnTo={returnTo} roundNumber={round.round_number} />
+        ) : null}
+        {closed && reviewUntil !== null ? (
+          <ReviewBanner returnTo={returnTo} expiresAt={reviewUntil} />
+        ) : null}
+
+        <MatchupGames
+          view={view}
+          nameA={nameA}
+          nameB={nameB}
+          returnTo={returnTo}
+          tracksColors={round?.tracks_colors ?? true}
+          readOnly={readOnly}
+        />
 
         {view.pairing.is_rematch ? (
           <p className="text-faint mt-6 max-w-prose text-xs leading-relaxed">

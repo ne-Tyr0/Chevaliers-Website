@@ -185,6 +185,41 @@ export const getMatchup = cache(
   },
 );
 
+export const getRound = cache(async (roundId: string): Promise<RoundRow | null> => {
+  const supabase = createPublicClient();
+  const { data } = await supabase
+    .from("rounds")
+    .select("*")
+    .eq("id", roundId)
+    .maybeSingle();
+  return data ?? null;
+});
+
+/**
+ * The round a single game belongs to, for deciding whether editing it counts as
+ * changing history. Two hops rather than a nested select, because this runs in
+ * an action rather than on a page and correctness matters more than the
+ * round trip.
+ */
+export async function getRoundForGame(gameId: string): Promise<RoundRow | null> {
+  const supabase = createPublicClient();
+  const { data: game } = await supabase
+    .from("games")
+    .select("pairing_id")
+    .eq("id", gameId)
+    .maybeSingle();
+  if (!game) return null;
+
+  const { data: pairing } = await supabase
+    .from("pairings")
+    .select("round_id")
+    .eq("id", game.pairing_id)
+    .maybeSingle();
+  if (!pairing) return null;
+
+  return getRound(pairing.round_id);
+}
+
 /**
  * The players a season's standings should list: everyone who has been paired at
  * least once, so the table reflects who actually turned up rather than the

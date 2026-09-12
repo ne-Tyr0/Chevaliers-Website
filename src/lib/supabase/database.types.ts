@@ -49,6 +49,8 @@ export type RoundRow = {
   round_number: number;
   played_on: string;
   status: RoundStatus;
+  /** False for rounds entered from paper, where nobody recorded who had White. */
+  tracks_colors: boolean;
   created_at: string;
 };
 
@@ -123,6 +125,7 @@ export type Database = {
           round_number: number;
           played_on?: string;
           status?: RoundStatus;
+          tracks_colors?: boolean;
           created_at?: string;
         };
         Update: {
@@ -131,6 +134,7 @@ export type Database = {
           round_number?: number;
           played_on?: string;
           status?: RoundStatus;
+          tracks_colors?: boolean;
           created_at?: string;
         };
         Relationships: [
