@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { StepKnight } from "@/components/chess-motion";
 import { CheckIcon, ChevronDown, ChevronRight, LockIcon } from "@/components/icons";
 import { Pawn } from "@/components/pawn";
-import { SiteHeader } from "@/components/site-header";
 import { StaffMatchList } from "@/components/staff-match-list";
 import {
   EmptyState,
@@ -15,6 +15,7 @@ import {
   formatDate,
 } from "@/components/ui";
 import {
+  addClubOfficer,
   addManualMatchup,
   addPlayer,
   clearPairings,
@@ -23,13 +24,27 @@ import {
   deleteMatchup,
   deleteSuggestion,
   generatePairings,
+  moveClubOfficer,
+  removeClubOfficer,
   setDefaultWording,
   setPlayerActive,
   setSuggestionStatus,
   startRound,
   unlockRole,
+  updateClubOfficer,
 } from "@/lib/club/actions";
 import { CLUB_INFO, isPlaceholder } from "@/lib/club/info";
+import {
+  formatSchoolYear,
+  getOfficerYears,
+  OFFICER_MESSAGE_MAX_LENGTH,
+  OFFICER_NAME_MAX_LENGTH,
+  OFFICER_POSITION_MAX_LENGTH,
+  parseSchoolYear,
+  schoolYearChoices,
+  schoolYearOf,
+  SUGGESTED_POSITIONS,
+} from "@/lib/club/officers";
 import {
   getActiveSeason,
   getRoster,
@@ -44,6 +59,7 @@ import {
 import { getDefaultWording, getTerms } from "@/lib/club/wording";
 import { currentRole } from "@/lib/officer/session";
 import type {
+  ClubOfficerRow,
   PlayerRow,
   RoundRow,
   SuggestionRow,
@@ -52,12 +68,13 @@ import type {
 
 export const metadata: Metadata = { title: "Officer tools" };
 
-type OfficerTab = "round" | "rounds" | "roster" | "suggestions" | "settings";
+type OfficerTab = "round" | "rounds" | "roster" | "officers" | "suggestions" | "settings";
 
 const TABS: { id: OfficerTab; label: string }[] = [
   { id: "round", label: "This round" },
   { id: "rounds", label: "All rounds" },
   { id: "roster", label: "Roster" },
+  { id: "officers", label: "Officers & adviser" },
   { id: "suggestions", label: "Suggestions" },
   { id: "settings", label: "Settings" },
 ];
@@ -80,7 +97,6 @@ export default async function OfficerPage({
   if (role !== "officer") {
     return (
       <>
-        <SiteHeader role={role} currentPath="/officer" />
         <PasscodeGate error={error} signedInAs={role} />
       </>
     );
@@ -91,8 +107,6 @@ export default async function OfficerPage({
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/officer" />
-
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader title="Officer tools" />
 
@@ -104,6 +118,11 @@ export default async function OfficerPage({
           {tab === "round" ? <RoundPanel /> : null}
           {tab === "rounds" ? <RoundsPanel /> : null}
           {tab === "roster" ? <RosterPanel /> : null}
+          {tab === "officers" ? (
+            <OfficersPanel
+              year={typeof params.year === "string" ? parseSchoolYear(params.year) : null}
+            />
+          ) : null}
           {tab === "suggestions" ? <SuggestionsPanel /> : null}
           {tab === "settings" ? <SettingsPanel saved={params.saved === "1"} /> : null}
         </div>
@@ -306,7 +325,7 @@ async function RoundPanel() {
         {active.length} active players
       </p>
 
-      <Stepper phase={phase} />
+      <Stepper phase={phase} roundKey={currentRound?.id ?? `${season.id}-new`} />
 
       <section
         aria-labelledby="step-heading"
@@ -513,10 +532,13 @@ async function RoundPanel() {
   );
 }
 
-function Stepper({ phase }: { phase: Phase }) {
+function Stepper({ phase, roundKey }: { phase: Phase; roundKey: string }) {
   const currentIndex = STEPS.findIndex((s) => s.id === phase);
   return (
-    <ol className="mt-6 grid grid-cols-4 gap-2" aria-label="Steps for running a round">
+    <ol
+      className="relative mt-6 grid grid-cols-4 gap-2 sm:items-center"
+      aria-label="Steps for running a round"
+    >
       {STEPS.map((step, index) => {
         const state =
           index < currentIndex ? "done" : index === currentIndex ? "current" : "upcoming";
@@ -534,7 +556,11 @@ function Stepper({ phase }: { phase: Phase }) {
                 borderColor: state === "upcoming" ? "var(--rule-strong)" : "var(--color-ink)",
               }}
             >
-              {state === "done" ? <CheckIcon className="size-4" /> : index + 1}
+              {state === "done" ? (
+                <CheckIcon className="size-4" />
+              ) : state === "current" ? null : (
+                index + 1
+              )}
             </span>
             <span
               className={`text-xs leading-tight sm:text-sm ${
@@ -549,6 +575,8 @@ function Stepper({ phase }: { phase: Phase }) {
           </li>
         );
       })}
+      {/* Stands on the current step's circle, and hops along when one is done. */}
+      <StepKnight roundKey={roundKey} step={currentIndex} />
     </ol>
   );
 }
@@ -1121,6 +1149,297 @@ async function SettingsPanel({ saved }: { saved: boolean }) {
           )}
         </p>
       </section>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Officers & adviser
+// ---------------------------------------------------------------------------
+
+/**
+ * Who holds each position, by school year, as shown on the public Players
+ * page. Years are kept, so handing over means adding the new year rather than
+ * overwriting the old one.
+ */
+async function OfficersPanel({ year }: { year: string | null }) {
+  const [{ years, error }, roster] = await Promise.all([getOfficerYears(), getRoster()]);
+  if (error) {
+    return (
+      <ErrorNote>
+        The officers list could not be loaded ({error}). If this is a new
+        install, run supabase/migrations/0010_club_officers.sql in the Supabase
+        SQL editor.
+      </ErrorNote>
+    );
+  }
+
+  const now = new Date();
+  const selected = year ?? years[0]?.schoolYear ?? schoolYearOf(now);
+  const choices = schoolYearChoices(
+    now,
+    years.map((y) => y.schoolYear),
+  );
+  const entries = years.find((y) => y.schoolYear === selected)?.officers ?? [];
+  const playerById = new Map(roster.map((p) => [p.id, p]));
+  const players = [...roster].sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  return (
+    <section>
+      <SectionHeading>Officers &amp; adviser</SectionHeading>
+      <p className="text-muted mt-2 max-w-prose leading-relaxed">
+        Shown to everyone on the{" "}
+        <Link href="/players/officers" className="link">
+          Players page
+        </Link>
+        . Each school year is kept, so past officers stay listed when a new
+        year is added.
+      </p>
+
+      <nav aria-label="School year" className="mt-5">
+        <p className="label">School year</p>
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {choices.map((choice) => {
+            const count = years.find((y) => y.schoolYear === choice)?.officers.length ?? 0;
+            return (
+              <li key={choice}>
+                <Link
+                  href={`/officer?tab=officers&year=${choice}`}
+                  aria-current={choice === selected ? "page" : undefined}
+                  className={choice === selected ? "btn-primary btn-sm" : "btn btn-sm"}
+                >
+                  {formatSchoolYear(choice)}
+                  {count > 0 ? (
+                    <span className="text-xs font-normal opacity-80">({count})</span>
+                  ) : null}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      <datalist id="position-suggestions">
+        {SUGGESTED_POSITIONS.map((position) => (
+          <option key={position} value={position} />
+        ))}
+      </datalist>
+
+      <h3 className="mt-8 text-lg">{formatSchoolYear(selected)}</h3>
+      {entries.length === 0 ? (
+        <p className="card text-muted mt-3 p-5">
+          Nobody is listed for {formatSchoolYear(selected)} yet. Add the adviser
+          and officers below, in the order they should appear.
+        </p>
+      ) : (
+        <ol className="mt-3 space-y-2">
+          {entries.map((officer, index) => {
+            const player = officer.player_id ? playerById.get(officer.player_id) : undefined;
+            return (
+              <li key={officer.id} className="card p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-muted text-sm font-medium">{officer.position}</p>
+                    <p className="font-medium">
+                      {player ? player.full_name : officer.name}
+                      {player ? (
+                        <span className="text-muted ml-2 text-sm font-normal">
+                          {[player.grade, "on the roster"].filter(Boolean).join(" · ")}
+                        </span>
+                      ) : null}
+                    </p>
+                    {officer.message ? (
+                      <p className="text-muted mt-1 text-sm break-words">{officer.message}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <MoveButton officer={officer} direction="up" disabled={index === 0} />
+                    <MoveButton
+                      officer={officer}
+                      direction="down"
+                      disabled={index === entries.length - 1}
+                    />
+                    <form action={removeClubOfficer}>
+                      <input type="hidden" name="officerId" value={officer.id} />
+                      <input type="hidden" name="schoolYear" value={officer.school_year} />
+                      <button type="submit" className="btn-quiet">
+                        Remove
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                <details className="group mt-3">
+                  <summary className="btn-quiet w-fit list-none">
+                    <span className="group-open:hidden">Edit</span>
+                    <span className="hidden group-open:inline">Close editing</span>
+                  </summary>
+                  <form
+                    action={updateClubOfficer}
+                    className="mt-3 border-t pt-4"
+                    style={{ borderColor: "var(--rule)" }}
+                  >
+                    <input type="hidden" name="officerId" value={officer.id} />
+                    <OfficerFields
+                      idPrefix={`edit-${officer.id}`}
+                      players={players}
+                      choices={choices}
+                      defaults={officer}
+                    />
+                    <button type="submit" className="btn-primary mt-4">
+                      Save changes
+                    </button>
+                  </form>
+                </details>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      <form action={addClubOfficer} className="card mt-6 p-5">
+        <h3 className="text-lg">Add someone</h3>
+        <p className="text-muted mt-1 text-sm leading-relaxed">
+          Choose a player from the roster so their page and grade stay linked,
+          or type a name for someone who is not on it, such as the adviser.
+        </p>
+        <div className="mt-4">
+          <OfficerFields
+            idPrefix="add"
+            players={players}
+            choices={choices}
+            defaults={{ school_year: selected }}
+          />
+        </div>
+        <button type="submit" className="btn-primary mt-4">
+          Add to the list
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function MoveButton({
+  officer,
+  direction,
+  disabled,
+}: {
+  officer: ClubOfficerRow;
+  direction: "up" | "down";
+  disabled: boolean;
+}) {
+  return (
+    <form action={moveClubOfficer}>
+      <input type="hidden" name="officerId" value={officer.id} />
+      <input type="hidden" name="schoolYear" value={officer.school_year} />
+      <input type="hidden" name="direction" value={direction} />
+      <button
+        type="submit"
+        disabled={disabled}
+        className="btn-quiet disabled:cursor-default disabled:opacity-40"
+        aria-label={`Move ${officer.position} ${direction}`}
+      >
+        {direction === "up" ? "↑ Up" : "↓ Down"}
+      </button>
+    </form>
+  );
+}
+
+/** The fields for one entry, shared by adding and editing. */
+function OfficerFields({
+  idPrefix,
+  players,
+  choices,
+  defaults,
+}: {
+  idPrefix: string;
+  players: PlayerRow[];
+  choices: string[];
+  defaults: Partial<ClubOfficerRow>;
+}) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div>
+        <label className="label block" htmlFor={`${idPrefix}-position`}>
+          Position
+        </label>
+        <input
+          id={`${idPrefix}-position`}
+          name="position"
+          required
+          list="position-suggestions"
+          maxLength={OFFICER_POSITION_MAX_LENGTH}
+          defaultValue={defaults.position ?? ""}
+          placeholder="President, Adviser…"
+          className="field mt-1.5"
+        />
+      </div>
+      <div>
+        <label className="label block" htmlFor={`${idPrefix}-year`}>
+          School year
+        </label>
+        <select
+          id={`${idPrefix}-year`}
+          name="schoolYear"
+          defaultValue={defaults.school_year}
+          className="field mt-1.5"
+        >
+          {choices.map((choice) => (
+            <option key={choice} value={choice}>
+              {formatSchoolYear(choice)}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="label block" htmlFor={`${idPrefix}-player`}>
+          Player on the roster
+        </label>
+        <select
+          id={`${idPrefix}-player`}
+          name="playerId"
+          defaultValue={defaults.player_id ?? ""}
+          className="field mt-1.5"
+        >
+          <option value="">Not on the roster</option>
+          {players.map((player) => (
+            <option key={player.id} value={player.id}>
+              {player.full_name}
+              {player.grade ? ` (${player.grade})` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="label block" htmlFor={`${idPrefix}-name`}>
+          Or their name, if not on the roster
+        </label>
+        <input
+          id={`${idPrefix}-name`}
+          name="name"
+          maxLength={OFFICER_NAME_MAX_LENGTH}
+          defaultValue={defaults.name ?? ""}
+          placeholder="e.g. Ms. Dela Cruz"
+          className="field mt-1.5"
+        />
+      </div>
+      <div className="sm:col-span-2">
+        <label className="label block" htmlFor={`${idPrefix}-message`}>
+          Message or contact <span className="font-normal">(optional)</span>
+        </label>
+        <input
+          id={`${idPrefix}-message`}
+          name="message"
+          maxLength={OFFICER_MESSAGE_MAX_LENGTH}
+          defaultValue={defaults.message ?? ""}
+          placeholder="Ask me about joining"
+          className="field mt-1.5"
+        />
+        <p className="text-muted mt-1.5 text-sm">
+          Everyone can see this. Only share contact details the person is happy
+          to have public.
+        </p>
+      </div>
     </div>
   );
 }

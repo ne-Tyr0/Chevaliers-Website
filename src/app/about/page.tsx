@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SiteHeader } from "@/components/site-header";
 import { MoreLink, PageHeader, SectionHeading } from "@/components/ui";
 import { CLUB_INFO, isPlaceholder } from "@/lib/club/info";
 import { getTerms } from "@/lib/club/wording";
-import { currentRole } from "@/lib/officer/session";
 import { termsFor } from "@/lib/terms";
 
 export const metadata: Metadata = { title: "About the club" };
@@ -25,7 +23,7 @@ const SECTIONS = [
  * about the results while the explanation stays one link away.
  */
 export default async function AboutPage() {
-  const [role, terms] = await Promise.all([currentRole(), getTerms()]);
+  const terms = await getTerms();
   const plain = termsFor("plain");
   const chess = termsFor("chess");
 
@@ -94,8 +92,6 @@ export default async function AboutPage() {
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/about" />
-
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader title="About the club" description={CLUB_INFO.about} />
 
@@ -150,6 +146,7 @@ export default async function AboutPage() {
           <p className="text-muted mt-4 leading-relaxed">
             Questions? <Value text={CLUB_INFO.contact} />
           </p>
+          <MoreLink href="/players/officers">Meet the officers and adviser</MoreLink>
         </section>
 
         <section id="scoring" className="mt-14 scroll-mt-6">

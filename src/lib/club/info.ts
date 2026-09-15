@@ -14,7 +14,6 @@ export const CLUB_INFO = {
   meetings: [
     { label: "When", value: "[Meeting day and time, e.g. Fridays, 3:30–5:00 pm]" },
     { label: "Where", value: "[Room or venue]" },
-    { label: "Adviser", value: "[Club adviser's name]" },
   ],
 
   /** Steps shown under "How to join". */

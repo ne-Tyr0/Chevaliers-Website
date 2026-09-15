@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { SiteHeader } from "@/components/site-header";
 import { StaffMatchList } from "@/components/staff-match-list";
 import { EmptyState, Note, PageHeader, WordingToggle } from "@/components/ui";
 import {
@@ -40,8 +39,6 @@ export default async function ArbiterPage() {
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/arbiter" />
-
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           eyebrow={openRound ? `Round ${openRound.round_number}` : "Arbiter"}

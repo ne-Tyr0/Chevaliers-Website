@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Pawn } from "@/components/pawn";
-import { SiteHeader } from "@/components/site-header";
 import { ErrorNote, PageHeader } from "@/components/ui";
 import { submitSuggestion } from "@/lib/club/actions";
 import {
   SUGGESTION_MAX_LENGTH,
   SUGGESTION_NAME_MAX_LENGTH,
 } from "@/lib/club/suggestions";
-import { currentRole } from "@/lib/officer/session";
 
 export const metadata: Metadata = { title: "Suggest a feature" };
 
@@ -22,12 +20,9 @@ export default async function SuggestPage({
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : null;
   const sent = params.sent === "1";
-  const role = await currentRole();
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/suggest" />
-
       <main className="mx-auto w-full max-w-xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           crumbs={[{ href: "/about", label: "About the club" }]}

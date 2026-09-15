@@ -33,6 +33,10 @@ Meeting times, how to join and who to contact are shown on the About page and
 live in [`src/lib/club/info.ts`](src/lib/club/info.ts). Values in square
 brackets are placeholders and show with a dashed outline until replaced.
 
+The officers and adviser are listed on **Players → Officers & adviser** and
+managed under **Officer tools → Officers & adviser**, which needs
+[`0010_club_officers.sql`](supabase/migrations/0010_club_officers.sql).
+
 Both cookies last 30 days per device. Changing a passcode signs everyone out of
 that role.
 
@@ -202,6 +206,31 @@ Every name on the standings and results links to that player's page, also
 reachable from **Players**, which has a search box. It shows their place,
 points, games played, won/drawn/lost, colour balance, both tiebreaks and every
 match of the season.
+
+### Officers and adviser
+
+Each position is entered for a school year, so handing over means adding the
+new year; earlier years stay listed under **Past officers**. A position is held
+by a roster player, whose page and grade stay linked, or by someone named
+directly, such as the adviser. Titles can be picked from suggestions or typed,
+entries are shown in the order officers arrange them, and an optional one-line
+message or contact is shown publicly on each card.
+
+The public page shows the newest school year that has anyone entered, so it
+does not go blank at the start of a year before the new officers are added.
+
+## Motion
+
+Animations are short and only answer something: a press, a page arriving,
+something opening. The chess touches each play once — the side pawns glide in
+when the site opens on a wide screen, the leader's pawn promotes to a queen
+once per visit, and in officer tools a knight hops along the steps of a round
+as each is completed. A checkerboard placeholder appears only if a page takes
+longer than about half a second to load.
+
+Everything moving is inside `prefers-reduced-motion: no-preference` in
+[`src/app/globals.css`](src/app/globals.css), so anyone whose device asks for
+reduced motion sees none of it.
 
 ## Colours are per round
 

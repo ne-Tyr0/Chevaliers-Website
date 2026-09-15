@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { ReviewBanner, ReviewGate } from "@/components/review-gate";
-import { SiteHeader } from "@/components/site-header";
 import { StaffMatchList } from "@/components/staff-match-list";
 import {
   EmptyState,
@@ -60,8 +59,6 @@ export default async function RoundPage({
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/officer" />
-
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           crumbs={[

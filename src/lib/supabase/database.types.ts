@@ -95,6 +95,21 @@ export type SiteSettingsRow = {
   updated_at: string;
 };
 
+/** A position held in the club for one school year. */
+export type ClubOfficerRow = {
+  id: string;
+  /** "2026-2027". */
+  school_year: string;
+  position: string;
+  /** The roster player holding it, or null for someone named in `name`. */
+  player_id: string | null;
+  name: string | null;
+  /** Optional public one-liner or contact. */
+  message: string | null;
+  sort_order: number;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -234,6 +249,30 @@ export type Database = {
           body?: string;
           name?: string | null;
           status?: SuggestionStatus;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      club_officers: {
+        Row: ClubOfficerRow;
+        Insert: {
+          id?: string;
+          school_year: string;
+          position: string;
+          player_id?: string | null;
+          name?: string | null;
+          message?: string | null;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          school_year?: string;
+          position?: string;
+          player_id?: string | null;
+          name?: string | null;
+          message?: string | null;
+          sort_order?: number;
           created_at?: string;
         };
         Relationships: [];

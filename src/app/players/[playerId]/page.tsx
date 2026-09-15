@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MatchCard } from "@/components/match-card";
-import { SiteHeader } from "@/components/site-header";
 import {
+  CountUp,
   EmptyState,
   MoreLink,
   PageHeader,
@@ -10,10 +11,10 @@ import {
   WordingToggle,
   formatDate,
 } from "@/components/ui";
+import { formatSchoolYear, getOfficerYears } from "@/lib/club/officers";
 import { getRoster } from "@/lib/club/queries";
 import { getSeasonSnapshot } from "@/lib/club/snapshot";
 import { getTerms } from "@/lib/club/wording";
-import { currentRole } from "@/lib/officer/session";
 import { formatPoints, ordinal } from "@/lib/terms";
 
 export async function generateMetadata({
@@ -35,15 +36,20 @@ export default async function PlayerPage({
   params,
 }: PageProps<"/players/[playerId]">) {
   const { playerId } = await params;
-  const [role, snapshot, roster, terms] = await Promise.all([
-    currentRole(),
+  const [snapshot, roster, terms, { years }] = await Promise.all([
     getSeasonSnapshot(),
     getRoster(),
     getTerms(),
+    getOfficerYears(),
   ]);
 
   const player = roster.find((p) => p.id === playerId);
   if (!player) notFound();
+
+  // Positions held in the most recent school year entered, if any.
+  const latestYear = years[0];
+  const positions =
+    latestYear?.officers.filter((officer) => officer.player_id === player.id) ?? [];
 
   const row = snapshot?.rowById.get(player.id) ?? null;
   const games = snapshot?.gamesByPlayer.get(player.id) ?? [];
@@ -72,8 +78,6 @@ export default async function PlayerPage({
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/players" />
-
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           crumbs={[{ href: "/players", label: "Players" }]}
@@ -84,6 +88,18 @@ export default async function PlayerPage({
           }
           title={player.full_name}
         />
+        {positions.length > 0 && latestYear ? (
+          <p className="mt-3 flex flex-wrap items-center gap-2">
+            {positions.map((officer) => (
+              <span key={officer.id} className="tag tag-strong">
+                {officer.position}, {formatSchoolYear(latestYear.schoolYear)}
+              </span>
+            ))}
+            <Link href="/players/officers" className="link inline-flex min-h-9 items-center text-sm">
+              All officers
+            </Link>
+          </p>
+        ) : null}
 
         {!row ? (
           <EmptyState action={<MoreLink href="/players">Back to all players</MoreLink>}>
@@ -94,13 +110,19 @@ export default async function PlayerPage({
           <>
             <dl className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Stat
+                index={0}
                 label="Place"
                 value={ordinal(row.rank)}
                 detail={`of ${snapshot!.standings.length}`}
               />
-              <Stat label={terms.points} value={formatPoints(row.score)} />
-              <Stat label="Games played" value={String(row.gamesPlayed)} />
+              <Stat index={1} label={terms.points} value={<CountUp value={row.score} />} />
               <Stat
+                index={2}
+                label="Games played"
+                value={<CountUp value={row.gamesPlayed} />}
+              />
+              <Stat
+                index={3}
                 label="Won · Drawn · Lost"
                 value={`${row.wins} · ${row.draws} · ${row.losses}`}
               />
@@ -184,9 +206,19 @@ export default async function PlayerPage({
   );
 }
 
-function Stat({ label, value, detail }: { label: string; value: string; detail?: string }) {
+function Stat({
+  index,
+  label,
+  value,
+  detail,
+}: {
+  index: number;
+  label: string;
+  value: React.ReactNode;
+  detail?: string;
+}) {
   return (
-    <div className="card p-4">
+    <div className="card reveal p-4" style={{ "--i": index } as React.CSSProperties}>
       <dt className="label">{label}</dt>
       <dd className="mt-1">
         <span className="font-display text-2xl font-semibold tabular-nums">{value}</span>

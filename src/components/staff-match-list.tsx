@@ -26,13 +26,17 @@ export function StaffMatchList({
 }) {
   return (
     <ul className="space-y-2">
-      {matches.map((view) => {
+      {matches.map((view, index) => {
         const isBye = view.pairing.player_b_id === null;
         const left = view.games.filter((g) => g.result === "pending").length;
         const done = !isBye && left === 0;
 
         return (
-          <li key={view.pairing.id} className="flex flex-col gap-1.5 sm:flex-row sm:items-stretch sm:gap-2">
+          <li
+            key={view.pairing.id}
+            className="reveal flex flex-col gap-1.5 sm:flex-row sm:items-stretch sm:gap-2"
+            style={{ "--i": index } as React.CSSProperties}
+          >
             <Link
               href={`/matchup/${view.pairing.id}`}
               className="card-link flex min-w-0 flex-1 items-center gap-3 px-4 py-3"

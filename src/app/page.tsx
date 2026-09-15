@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { ChevronRight, SearchIcon } from "@/components/icons";
+import { LeaderMark } from "@/components/chess-motion";
 import { MatchCard } from "@/components/match-card";
-import { SiteHeader } from "@/components/site-header";
 import {
+  CountUp,
   MoreLink,
   RoundStatusTag,
   SectionHeading,
@@ -13,7 +14,7 @@ import { CLUB_INFO } from "@/lib/club/info";
 import { getSeasonSnapshot } from "@/lib/club/snapshot";
 import { getTerms } from "@/lib/club/wording";
 import { currentRole } from "@/lib/officer/session";
-import { formatPoints, ordinal } from "@/lib/terms";
+import { ordinal } from "@/lib/terms";
 
 /** How many players the home page previews before pointing at the full table. */
 const TOP_PLAYERS = 5;
@@ -48,8 +49,6 @@ export default async function HomePage() {
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/" />
-
       <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-14">
         <section>
           <h1 className="text-4xl text-balance sm:text-5xl">
@@ -114,24 +113,27 @@ export default async function HomePage() {
                 </p>
               ) : (
                 <ol className="card mt-4 p-2">
-                  {snapshot.standings.slice(0, TOP_PLAYERS).map((row) => (
-                    <li key={row.playerId}>
+                  {snapshot.standings.slice(0, TOP_PLAYERS).map((row, index) => (
+                    <li
+                      key={row.playerId}
+                      className="reveal"
+                      style={{ "--i": index } as React.CSSProperties}
+                    >
                       <Link
                         href={`/players/${row.playerId}`}
                         className="row-link mx-0 px-3"
                       >
                         <span
-                          className={`w-9 shrink-0 text-sm tabular-nums ${row.rank <= 3 ? "font-semibold" : "text-muted"}`}
+                          className={`flex w-12 shrink-0 items-center gap-1.5 text-sm tabular-nums ${row.rank <= 3 ? "font-semibold" : "text-muted"}`}
                         >
                           {ordinal(row.rank)}
+                          {row.rank === 1 ? <LeaderMark /> : null}
                         </span>
                         <span className="min-w-0 flex-1 truncate">
                           {snapshot.nameById.get(row.playerId)}
                         </span>
                         <span className="shrink-0 text-right tabular-nums">
-                          <span className="font-semibold">
-                            {formatPoints(row.score)}
-                          </span>
+                          <CountUp value={row.score} className="font-semibold" />
                           <span className="text-muted text-sm">
                             {" "}
                             {terms.points.toLowerCase()}
@@ -162,9 +164,10 @@ export default async function HomePage() {
               </SectionHeading>
               {latestRound ? (
                 <div className="mt-4 space-y-3">
-                  {latestMatches.slice(0, 4).map((view) => (
+                  {latestMatches.slice(0, 4).map((view, index) => (
                     <MatchCard
                       key={view.pairing.id}
+                      revealIndex={index}
                       view={view}
                       nameById={snapshot.nameById}
                       terms={terms}
@@ -210,7 +213,11 @@ export default async function HomePage() {
                 body: "A win is 1 point and a draw is ½. Most points at the end of the season wins.",
               },
             ].map((step, index) => (
-              <li key={step.title} className="card p-5">
+              <li
+                key={step.title}
+                className="card reveal p-5"
+                style={{ "--i": index } as React.CSSProperties}
+              >
                 <span className="bg-ink text-cream flex size-8 items-center justify-center rounded-full text-sm font-semibold">
                   {index + 1}
                 </span>

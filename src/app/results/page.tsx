@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { MatchCard } from "@/components/match-card";
-import { SiteHeader } from "@/components/site-header";
 import {
   EmptyState,
   MoreLink,
@@ -12,13 +11,11 @@ import {
 } from "@/components/ui";
 import { getSeasonSnapshot } from "@/lib/club/snapshot";
 import { getTerms } from "@/lib/club/wording";
-import { currentRole } from "@/lib/officer/session";
 
 export const metadata: Metadata = { title: "Results" };
 
 export default async function ResultsPage() {
-  const [role, snapshot, terms] = await Promise.all([
-    currentRole(),
+  const [snapshot, terms] = await Promise.all([
     getSeasonSnapshot(),
     getTerms(),
   ]);
@@ -26,7 +23,6 @@ export default async function ResultsPage() {
   if (!snapshot) {
     return (
       <>
-        <SiteHeader role={role} currentPath="/results" />
         <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-14">
           <PageHeader title={terms.resultsTitle} />
           <EmptyState action={<MoreLink href="/about">How a season works</MoreLink>}>
@@ -52,8 +48,6 @@ export default async function ResultsPage() {
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/results" />
-
       <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           eyebrow={season.name}
@@ -112,9 +106,10 @@ export default async function ResultsPage() {
                   ) : null}
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {matches.map((view) => (
+                    {matches.map((view, index) => (
                       <MatchCard
                         key={view.pairing.id}
+                        revealIndex={index}
                         view={view}
                         nameById={nameById}
                         terms={terms}
