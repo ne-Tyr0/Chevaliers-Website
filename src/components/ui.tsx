@@ -251,3 +251,31 @@ export function MoreLink({
     </Link>
   );
 }
+
+/**
+ * A number that counts up from zero as the page appears.
+ *
+ * Whole numbers count; a trailing half is written after them, so "6½" counts
+ * 0…6 and then shows the half. The visible figure is a CSS counter (see
+ * `.count-up` in globals.css) and hidden from screen readers, which get the
+ * real value instead.
+ */
+export function CountUp({ value, className = "" }: { value: number; className?: string }) {
+  const whole = Math.floor(value);
+  const half = value - whole === 0.5;
+  if (whole === 0) {
+    return <span className={`tabular-nums ${className}`}>{half ? "½" : "0"}</span>;
+  }
+  return (
+    <span className={`tabular-nums ${className}`}>
+      <span className="sr-only">{half ? `${whole}½` : whole}</span>
+      <span
+        aria-hidden
+        className="count-up"
+        style={{ "--count": whole } as React.CSSProperties}
+      >
+        {half ? "½" : null}
+      </span>
+    </span>
+  );
+}

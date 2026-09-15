@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { formatMatchupScore, MatchupGames } from "@/components/matchup-games";
 import { ReviewBanner, ReviewGate } from "@/components/review-gate";
-import { SiteHeader } from "@/components/site-header";
 import { ErrorNote, Note, PageHeader, WordingToggle } from "@/components/ui";
 import { getMatchup, getRound, getRoster } from "@/lib/club/queries";
 import { getTerms } from "@/lib/club/wording";
@@ -56,8 +55,6 @@ export default async function MatchupPage({
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/matchup" />
-
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           crumbs={crumbs}

@@ -313,3 +313,380 @@
     font-size: 16px;
   }
 }
+
+/* ==========================================================================
+ * Motion
+ *
+ * Rules, from NN/g's timing research and WCAG 2.3.3:
+ *   - Feedback is quick: 100–250ms, easing out, so it answers the tap rather
+ *     than making anyone wait for it.
+ *   - Nothing loops. The chess touches each play once, and only where they
+ *     say something (a page arriving, a step completed, who is top).
+ *   - Anyone whose device asks for reduced motion gets none of it. Every
+ *     moving rule sits inside `prefers-reduced-motion: no-preference`, so the
+ *     default is stillness and motion is the opt-in.
+ * ========================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes drop-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes glide-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-45%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes glide-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(45%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/*
+ * Loading placeholders: a faint checkerboard in the shape of the page. They
+ * only appear if loading takes longer than about half a second — NN/g notes a
+ * skeleton that flashes up and vanishes on a fast load is worse than none.
+ */
+.skeleton-page {
+  animation: fade-in 200ms ease-out 600ms both;
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background-color: var(--color-cream-light);
+  background-image: repeating-conic-gradient(
+    color-mix(in srgb, var(--color-ink) 5%, transparent) 0 25%,
+    transparent 0 50%
+  );
+  background-size: 18px 18px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Pressing anything gives way slightly under the finger. */
+  .btn,
+  .btn-primary,
+  .btn-quiet,
+  .press {
+    transition-property: background-color, color, border-color, transform;
+    transition-duration: 150ms;
+  }
+  .btn:active,
+  .btn-primary:active,
+  .btn-quiet:active,
+  .press:active {
+    transform: scale(0.97);
+    transition-duration: 60ms;
+  }
+
+  /* Cards that open a page lift towards the pointer. */
+  .card-link {
+    transition:
+      border-color 150ms,
+      background-color 150ms,
+      transform 200ms var(--ease-out),
+      box-shadow 200ms var(--ease-out);
+  }
+  .card-link:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px -14px color-mix(in srgb, var(--color-ink) 45%, transparent);
+  }
+  .card-link:active {
+    transform: translateY(0) scale(0.99);
+    transition-duration: 60ms;
+  }
+
+  /* The chevron on a row nudges the way it leads. */
+  .row-link > svg:last-child,
+  .card-link > svg:last-child {
+    transition: transform 200ms var(--ease-out);
+  }
+  .row-link:hover > svg:last-child,
+  .card-link:hover > svg:last-child {
+    transform: translateX(3px);
+  }
+
+  /* Anything that opens (Show games, More numbers, Change the pairings)
+     settles in from just above rather than appearing all at once. */
+  details[open] > :not(summary) {
+    animation: drop-open 240ms var(--ease-out);
+  }
+
+  /* Lists of cards arrive one after another. The stagger is capped so a long
+     list never keeps anyone waiting for the bottom of it. */
+  .reveal {
+    animation: rise 380ms var(--ease-out) both;
+    animation-delay: calc(min(var(--i, 0), 8) * 45ms);
+  }
+
+  /* The two side pawns glide in once, when the site first opens. They live in
+     the root layout, so moving between pages does not replay it. */
+  .pawn-glide-left {
+    animation: glide-from-left 1100ms var(--ease-out) 200ms both;
+  }
+  .pawn-glide-right {
+    animation: glide-from-right 1100ms var(--ease-out) 320ms both;
+  }
+
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--color-cream-light) 70%, transparent),
+      transparent
+    );
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  /* ---- Page transitions (React <ViewTransition>) ---------------------- */
+
+  /* Clicks during a transition reach the page rather than the overlay. */
+  ::view-transition {
+    pointer-events: none;
+  }
+
+  /* The old page steps back quickly; the new one rises gently into place. */
+  ::view-transition-old(.page) {
+    animation: 120ms ease-in both fade-out;
+  }
+  ::view-transition-new(.page) {
+    animation: 280ms var(--ease-out) 80ms both rise;
+  }
+
+  /* The "you are here" markers slide to the new link. */
+  ::view-transition-group(.marker) {
+    animation-duration: 320ms;
+    animation-timing-function: var(--ease-in-out);
+  }
+
+  /* The header and phone tab bar hold still: one fixed point while the
+     content changes. */
+  ::view-transition-group(site-header),
+  ::view-transition-group(tab-bar) {
+    animation: none;
+    z-index: 100;
+  }
+  ::view-transition-old(site-header),
+  ::view-transition-old(tab-bar) {
+    display: none;
+  }
+  ::view-transition-new(site-header),
+  ::view-transition-new(tab-bar) {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+}
+
+/* ---- Chess touches ------------------------------------------------------ */
+
+/*
+ * Counting up. The number is a CSS counter driven by a registered integer
+ * property, so it animates from the very first paint with no JavaScript and
+ * no flash of the final figure first. The real value is also in the page for
+ * screen readers (see CountUp). Browsers without @property show the final
+ * number straight away.
+ */
+@property --count {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
+@keyframes count-up {
+  from {
+    --count: 0;
+  }
+}
+.count-up {
+  counter-reset: count var(--count);
+}
+.count-up::before {
+  content: counter(count);
+}
+
+/* The leader's pawn and queen start hidden and fade in whichever applies. */
+.leader-pawn,
+.leader-queen {
+  opacity: 0;
+}
+.leader-mark[data-state="queen"] .leader-queen,
+.leader-mark[data-state="promote"] .leader-queen {
+  opacity: 1;
+}
+
+/* The knight stands on the current step's circle. Its position is worked out
+   from the step index against the four-column grid in the stepper. */
+.step-knight {
+  --col: calc((100% - 1.5rem) / 4 + 0.5rem);
+  position: absolute;
+  top: 1rem;
+  left: calc(var(--step) * var(--col) + (100% - 1.5rem) / 8);
+  display: flex;
+  translate: -50% -50%;
+  color: var(--color-cream);
+  pointer-events: none;
+}
+@media (min-width: 40rem) {
+  .step-knight {
+    top: 50%;
+    left: calc(var(--step) * var(--col) + 1rem);
+  }
+}
+
+@keyframes knight-hop-phone {
+  /* Cream while it stands on a filled circle, ink while it crosses the page
+     between circles, so it stays visible the whole way. */
+  0% {
+    left: calc(var(--from) * var(--col) + (100% - 1.5rem) / 8);
+    color: var(--color-cream);
+  }
+  20%,
+  80% {
+    color: var(--color-ink);
+  }
+  45% {
+    translate: -50% -130%;
+  }
+  100% {
+    left: calc(var(--step) * var(--col) + (100% - 1.5rem) / 8);
+    color: var(--color-cream);
+  }
+}
+
+@keyframes knight-hop {
+  /* Cream while it stands on a filled circle, ink while it crosses the page
+     between circles, so it stays visible the whole way. */
+  0% {
+    left: calc(var(--from) * var(--col) + 1rem);
+    color: var(--color-cream);
+  }
+  20%,
+  80% {
+    color: var(--color-ink);
+  }
+  45% {
+    translate: -50% -130%;
+  }
+  100% {
+    left: calc(var(--step) * var(--col) + 1rem);
+    color: var(--color-cream);
+  }
+}
+
+@keyframes pawn-promote-out {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.6);
+  }
+}
+@keyframes queen-promote-in {
+  0% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.6);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .count-up {
+    animation: count-up 900ms var(--ease-out) 150ms backwards;
+  }
+
+  .leader-mark[data-state="queen"] .leader-queen {
+    animation: fade-in 150ms ease-out;
+  }
+  .leader-mark[data-state="promote"] .leader-pawn {
+    animation: pawn-promote-out 320ms ease-in 700ms backwards;
+  }
+  .leader-mark[data-state="promote"] .leader-queen {
+    animation: queen-promote-in 460ms var(--ease-out) 950ms backwards;
+  }
+
+  .step-knight.is-hopping {
+    animation: knight-hop-phone 600ms var(--ease-in-out) 150ms backwards;
+  }
+  @media (min-width: 40rem) {
+    .step-knight.is-hopping {
+      animation-name: knight-hop;
+    }
+  }
+}

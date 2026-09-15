@@ -1,17 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SiteHeader } from "@/components/site-header";
 import { StandingsTable } from "@/components/standings-table";
 import { EmptyState, MoreLink, PageHeader, WordingToggle } from "@/components/ui";
 import { getSeasonSnapshot } from "@/lib/club/snapshot";
 import { getTerms } from "@/lib/club/wording";
-import { currentRole } from "@/lib/officer/session";
 
 export const metadata: Metadata = { title: "Standings" };
 
 export default async function StandingsPage() {
-  const [role, snapshot, terms] = await Promise.all([
-    currentRole(),
+  const [snapshot, terms] = await Promise.all([
     getSeasonSnapshot(),
     getTerms(),
   ]);
@@ -19,7 +16,6 @@ export default async function StandingsPage() {
   if (!snapshot) {
     return (
       <>
-        <SiteHeader role={role} currentPath="/standings" />
         <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-14">
           <PageHeader title="Standings" />
           <EmptyState
@@ -38,8 +34,6 @@ export default async function StandingsPage() {
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/standings" />
-
       <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           eyebrow={season.name}

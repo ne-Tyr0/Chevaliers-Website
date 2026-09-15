@@ -18,12 +18,15 @@ export function MatchCard({
   terms,
   tracksColors = true,
   showGames = true,
+  revealIndex,
 }: {
   view: MatchupView;
   nameById: ReadonlyMap<string, string>;
   terms: Terms;
   tracksColors?: boolean;
   showGames?: boolean;
+  /** Position in a list, so cards arrive one after another. */
+  revealIndex?: number;
 }) {
   const { pairing } = view;
   const nameA = nameById.get(pairing.player_a_id) ?? "Unknown player";
@@ -50,7 +53,14 @@ export function MatchCard({
               : "Drawn";
 
   return (
-    <article className="card p-4 sm:p-5">
+    <article
+      className={`card p-4 sm:p-5 ${revealIndex === undefined ? "" : "reveal"}`}
+      style={
+        revealIndex === undefined
+          ? undefined
+          : ({ "--i": revealIndex } as React.CSSProperties)
+      }
+    >
       <div className="flex items-baseline justify-between gap-3">
         <p className="text-muted text-sm">
           {terms.board} {pairing.board_number}

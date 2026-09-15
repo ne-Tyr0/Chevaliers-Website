@@ -31,6 +31,12 @@ import {
   SUGGESTION_STATUSES,
 } from "./suggestions";
 import { parseWording, WORDING_COOKIE } from "@/lib/terms";
+import {
+  OFFICER_MESSAGE_MAX_LENGTH,
+  OFFICER_NAME_MAX_LENGTH,
+  OFFICER_POSITION_MAX_LENGTH,
+  parseSchoolYear,
+} from "./officers";
 
 /** Upper bound for the placeholder pairing number. Wide enough that ties are rare. */
 const PAIRING_NUMBER_RANGE = 1_000_000;
@@ -783,4 +789,166 @@ export async function setDefaultWording(formData: FormData) {
 
   revalidatePath("/", "layout");
   backTo("/officer?tab=settings&saved=1");
+}
+
+// ---------------------------------------------------------------------------
+// Officers and advisers — officers only
+// ---------------------------------------------------------------------------
+
+function backToOfficersTab(schoolYear: string | null, error?: string): never {
+  backTo(
+    schoolYear ? `/officer?tab=officers&year=${schoolYear}` : "/officer?tab=officers",
+    error,
+  );
+}
+
+function revalidateOfficers() {
+  revalidatePath("/officer");
+  revalidatePath("/players", "layout");
+  revalidatePath("/about");
+}
+
+/**
+ * Read and check the fields shared by adding and editing an entry.
+ *
+ * A position is held by either a roster player or a named person. If both are
+ * given, the roster player wins: their name and grade then stay in step with
+ * the roster rather than being typed twice.
+ */
+function readOfficerFields(formData: FormData) {
+  const schoolYear = parseSchoolYear(String(formData.get("schoolYear") ?? ""));
+  const position = String(formData.get("position") ?? "").trim();
+  const playerId = String(formData.get("playerId") ?? "").trim() || null;
+  const typedName = String(formData.get("name") ?? "").trim() || null;
+  const message = String(formData.get("message") ?? "").trim() || null;
+
+  if (!schoolYear) return { error: "Choose a school year.", schoolYear: null } as const;
+  if (!position) return { error: "Give the position a title.", schoolYear } as const;
+  if (position.length > OFFICER_POSITION_MAX_LENGTH) {
+    return { error: `Keep the title under ${OFFICER_POSITION_MAX_LENGTH} characters.`, schoolYear } as const;
+  }
+  if (!playerId && !typedName) {
+    return {
+      error: "Choose a player from the roster, or type the name of someone who is not on it.",
+      schoolYear,
+    } as const;
+  }
+  if (!playerId && typedName && typedName.length > OFFICER_NAME_MAX_LENGTH) {
+    return { error: `Keep the name under ${OFFICER_NAME_MAX_LENGTH} characters.`, schoolYear } as const;
+  }
+  if (message && message.length > OFFICER_MESSAGE_MAX_LENGTH) {
+    return { error: `Keep the message under ${OFFICER_MESSAGE_MAX_LENGTH} characters.`, schoolYear } as const;
+  }
+
+  return {
+    error: null,
+    schoolYear,
+    fields: {
+      school_year: schoolYear,
+      position,
+      player_id: playerId,
+      name: playerId ? null : typedName,
+      message,
+    },
+  } as const;
+}
+
+export async function addClubOfficer(formData: FormData) {
+  await assertOfficer();
+  const read = readOfficerFields(formData);
+  if (read.error !== null) backToOfficersTab(read.schoolYear, read.error);
+
+  const supabase = createAdminClient();
+  const { data: last } = await supabase
+    .from("club_officers")
+    .select("sort_order")
+    .eq("school_year", read.schoolYear)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("club_officers")
+    .insert({ ...read.fields, sort_order: (last?.sort_order ?? -1) + 1 });
+  if (error) {
+    backToOfficersTab(
+      read.schoolYear,
+      `${error.message}. If this is a new install, run supabase/migrations/0010_club_officers.sql.`,
+    );
+  }
+
+  revalidateOfficers();
+  backToOfficersTab(read.schoolYear);
+}
+
+export async function updateClubOfficer(formData: FormData) {
+  await assertOfficer();
+  const id = String(formData.get("officerId") ?? "");
+  const read = readOfficerFields(formData);
+  if (!id) backToOfficersTab(read.schoolYear, "That entry no longer exists.");
+  if (read.error !== null) backToOfficersTab(read.schoolYear, read.error);
+
+  const { error } = await createAdminClient()
+    .from("club_officers")
+    .update(read.fields)
+    .eq("id", id);
+  if (error) backToOfficersTab(read.schoolYear, error.message);
+
+  revalidateOfficers();
+  backToOfficersTab(read.schoolYear);
+}
+
+/**
+ * Move an entry one place up or down within its school year.
+ *
+ * Renumbers the whole year from zero rather than swapping two values, so gaps
+ * or duplicates left by earlier deletes can never make the order ambiguous.
+ */
+export async function moveClubOfficer(formData: FormData) {
+  await assertOfficer();
+  const id = String(formData.get("officerId") ?? "");
+  const direction = String(formData.get("direction") ?? "");
+  const schoolYear = parseSchoolYear(String(formData.get("schoolYear") ?? ""));
+  if (!id || !schoolYear || (direction !== "up" && direction !== "down")) {
+    backToOfficersTab(schoolYear, "That move is not recognised.");
+  }
+
+  const supabase = createAdminClient();
+  const { data: rows, error: readError } = await supabase
+    .from("club_officers")
+    .select("id")
+    .eq("school_year", schoolYear)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (readError) backToOfficersTab(schoolYear, readError.message);
+
+  const order = (rows ?? []).map((row) => row.id);
+  const index = order.indexOf(id);
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (index < 0 || target < 0 || target >= order.length) backToOfficersTab(schoolYear);
+  [order[index], order[target]] = [order[target], order[index]];
+
+  for (const [position, rowId] of order.entries()) {
+    const { error } = await supabase
+      .from("club_officers")
+      .update({ sort_order: position })
+      .eq("id", rowId);
+    if (error) backToOfficersTab(schoolYear, error.message);
+  }
+
+  revalidateOfficers();
+  backToOfficersTab(schoolYear);
+}
+
+export async function removeClubOfficer(formData: FormData) {
+  await assertOfficer();
+  const id = String(formData.get("officerId") ?? "");
+  const schoolYear = parseSchoolYear(String(formData.get("schoolYear") ?? ""));
+  if (!id) backToOfficersTab(schoolYear, "That entry no longer exists.");
+
+  const { error } = await createAdminClient().from("club_officers").delete().eq("id", id);
+  if (error) backToOfficersTab(schoolYear, error.message);
+
+  revalidateOfficers();
+  backToOfficersTab(schoolYear);
 }

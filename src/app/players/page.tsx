@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, SearchIcon } from "@/components/icons";
-import { SiteHeader } from "@/components/site-header";
+import { PlayersTabs } from "@/components/players-tabs";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { getRoster } from "@/lib/club/queries";
 import { getSeasonSnapshot } from "@/lib/club/snapshot";
 import { getTerms } from "@/lib/club/wording";
-import { currentRole } from "@/lib/officer/session";
 import { formatPoints, ordinal, shortName } from "@/lib/terms";
 
 export const metadata: Metadata = { title: "Players" };
@@ -15,7 +14,7 @@ export const metadata: Metadata = { title: "Players" };
 function fold(value: string): string {
   return value
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 }
 
@@ -31,8 +30,7 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
   const params = await searchParams;
   const query = typeof params.q === "string" ? params.q.trim() : "";
 
-  const [role, snapshot, roster, terms] = await Promise.all([
-    currentRole(),
+  const [snapshot, roster, terms] = await Promise.all([
     getSeasonSnapshot(),
     getRoster(),
     getTerms(),
@@ -55,13 +53,12 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
 
   return (
     <>
-      <SiteHeader role={role} currentPath="/players" />
-
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
         <PageHeader
           title="Players"
           description="Find anyone in the club to see their place in the table and every game they have played this season."
         />
+        <PlayersTabs current="all" />
 
         <form role="search" action="/players" className="mt-6 flex gap-2">
           <label htmlFor="player-search" className="sr-only">
@@ -99,13 +96,13 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
           <EmptyState>The roster is empty. Officers add players by name.</EmptyState>
         ) : ordered.length > 0 ? (
           <ul className="card mt-6 p-2">
-            {ordered.map((player) => {
+            {ordered.map((player, index) => {
               const row = snapshot?.rowById.get(player.id);
               return (
                 <li
                   key={player.id}
-                  className="border-b last:border-b-0"
-                  style={{ borderColor: "var(--rule)" }}
+                  className="reveal border-b last:border-b-0"
+                  style={{ borderColor: "var(--rule)", "--i": index } as React.CSSProperties}
                 >
                   <Link href={`/players/${player.id}`} className="row-link mx-0 px-3">
                     <span className="min-w-0 flex-1">
@@ -113,7 +110,7 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
                       <span className="text-muted block text-sm">
                         {[player.grade, player.is_active ? null : "no longer playing"]
                           .filter(Boolean)
-                          .join(" · ") || " "}
+                          .join(" · ") || "\u00a0"}
                       </span>
                     </span>
                     <span className="shrink-0 text-right text-sm">

@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { ViewTransition } from "react";
 import { lockRole } from "@/lib/club/actions";
 import type { ClubRole } from "@/lib/officer/session";
 import {
@@ -27,25 +31,26 @@ const DESTINATIONS = [
   { href: "/about", label: "About", Icon: InfoIcon },
 ] as const;
 
-function isCurrent(href: string, currentPath: string): boolean {
-  if (href === "/") return currentPath === "/";
-  return currentPath === href || currentPath.startsWith(`${href}/`);
+function isCurrent(href: string, pathname: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /**
  * Site navigation: a header on every screen, plus a tab bar on phones.
  *
+ * Rendered once in the root layout, so it stays put while pages change beneath
+ * it. That is what lets the "you are here" marker slide from one link to the
+ * next instead of vanishing and reappearing, and gives the eye one fixed
+ * point while the content moves.
+ *
  * Navigation is always visible rather than behind a menu button. NN/g's
  * testing found hiding it roughly halved how often people found it, and a
  * bottom bar keeps it where a thumb reaches.
  */
-export function SiteHeader({
-  role,
-  currentPath,
-}: {
-  role: ClubRole | null;
-  currentPath: string;
-}) {
+export function SiteHeader({ role }: { role: ClubRole | null }) {
+  const pathname = usePathname();
+
   const staffLink =
     role === "officer"
       ? { href: "/officer", label: "Officer tools" }
@@ -54,21 +59,22 @@ export function SiteHeader({
         : null;
   const inStaffArea =
     staffLink !== null &&
-    (isCurrent(staffLink.href, currentPath) || currentPath.startsWith("/matchup"));
+    (isCurrent(staffLink.href, pathname) || pathname.startsWith("/matchup"));
 
   return (
     <>
       <header
-        className="border-b"
+        className="relative z-30 border-b"
         style={{
           borderColor: "var(--rule)",
           backgroundColor: "var(--color-cream)",
+          viewTransitionName: "site-header",
         }}
       >
         <div className="mx-auto flex min-h-16 max-w-5xl items-center gap-x-6 px-4 py-2 sm:px-6">
           <Link
             href="/"
-            className="-ml-1 flex min-h-11 items-center rounded-md px-1 text-xl sm:text-2xl"
+            className="group -ml-1 flex min-h-11 items-center rounded-md px-1 text-xl sm:text-2xl"
           >
             <Wordmark />
             <span className="sr-only"> — home</span>
@@ -77,7 +83,7 @@ export function SiteHeader({
           <nav aria-label="Main" className="hidden sm:block">
             <ul className="flex items-center gap-1">
               {DESTINATIONS.filter((d) => d.href !== "/").map((item) => {
-                const current = isCurrent(item.href, currentPath);
+                const current = isCurrent(item.href, pathname);
                 return (
                   <li key={item.href}>
                     <Link
@@ -91,10 +97,12 @@ export function SiteHeader({
                     >
                       {item.label}
                       {current ? (
-                        <span
-                          aria-hidden
-                          className="bg-ink absolute inset-x-3 -bottom-2 h-0.5 rounded-full"
-                        />
+                        <ViewTransition name="nav-marker" share="marker" default="none">
+                          <span
+                            aria-hidden
+                            className="bg-ink absolute inset-x-3 -bottom-2 h-0.5 rounded-full"
+                          />
+                        </ViewTransition>
                       ) : null}
                     </Link>
                   </li>
@@ -128,13 +136,13 @@ export function SiteHeader({
         </div>
       </header>
 
-      <TabBar currentPath={currentPath} />
+      <TabBar pathname={pathname} />
     </>
   );
 }
 
 /** Phones only. Fixed to the bottom, clear of the home indicator. */
-function TabBar({ currentPath }: { currentPath: string }) {
+function TabBar({ pathname }: { pathname: string }) {
   return (
     <nav
       aria-label="Main"
@@ -143,26 +151,28 @@ function TabBar({ currentPath }: { currentPath: string }) {
         borderColor: "var(--rule-strong)",
         backgroundColor: "var(--color-cream-light)",
         paddingBottom: "env(safe-area-inset-bottom)",
+        viewTransitionName: "tab-bar",
       }}
     >
       <ul className="grid h-[var(--tabbar-height)] grid-cols-5">
         {DESTINATIONS.map(({ href, label, Icon }) => {
-          const current = isCurrent(href, currentPath);
+          const current = isCurrent(href, pathname);
           return (
             <li key={href}>
               <Link
                 href={href}
                 aria-current={current ? "page" : undefined}
-                className={`flex h-full flex-col items-center justify-center gap-1 text-[0.6875rem] leading-none ${
+                className={`press flex h-full flex-col items-center justify-center gap-1 text-[0.6875rem] leading-none ${
                   current ? "text-ink font-semibold" : "text-muted"
                 }`}
               >
-                <span
-                  className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors ${
-                    current ? "bg-ink text-cream" : ""
-                  }`}
-                >
-                  <Icon className="size-5" />
+                <span className="relative flex h-7 w-12 items-center justify-center">
+                  {current ? (
+                    <ViewTransition name="tab-marker" share="marker" default="none">
+                      <span aria-hidden className="bg-ink absolute inset-0 rounded-full" />
+                    </ViewTransition>
+                  ) : null}
+                  <Icon className={`relative size-5 ${current ? "text-cream" : ""}`} />
                 </span>
                 {label}
               </Link>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { StandingRow } from "@/lib/swiss";
+import { LeaderMark } from "./chess-motion";
 import { formatPoints, type Terms } from "@/lib/terms";
 
 /**
@@ -92,10 +93,13 @@ export function StandingsTable({
                 }}
               >
                 <td
-                  className={`py-3 pl-4 align-top tabular-nums sm:pl-5 ${podium ? "font-semibold" : "text-muted"}`}
+                  className={`py-3 pr-2 pl-4 align-top tabular-nums sm:pl-5 ${podium ? "font-semibold" : "text-muted"}`}
                   data-numeric
                 >
-                  {row.rank}
+                  <span className="inline-flex items-center gap-1">
+                    {row.rank}
+                    {row.rank === 1 ? <LeaderMark /> : null}
+                  </span>
                 </td>
                 <td className="py-3 pr-3 align-top">
                   <Link

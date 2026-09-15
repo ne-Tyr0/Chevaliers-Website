@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { PawnBackdrop } from "@/components/pawn-backdrop";
 import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+import { currentRole } from "@/lib/officer/session";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -70,7 +72,12 @@ export const viewport: Viewport = {
   themeColor: "#f0ece0",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // The header lives here rather than in each page so it stays in place while
+  // pages change beneath it. Signing in or out revalidates the layout, which
+  // is how it picks up the new role.
+  const role = await currentRole();
+
   // The body leaves room at the bottom on phones, so the fixed tab bar never
   // covers the end of the page.
   return (
@@ -80,6 +87,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full pb-[calc(var(--tabbar-height)+env(safe-area-inset-bottom))] sm:pb-0">
         <PawnBackdrop />
+        <SiteHeader role={role} />
         {children}
         <SiteFooter />
       </body>
