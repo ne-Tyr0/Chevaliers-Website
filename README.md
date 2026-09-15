@@ -13,13 +13,25 @@ is worth 2 to the winner and 1 to the loser.
 
 There are no accounts, just two shared passcodes.
 
-- **Everyone** — standings and results, no sign-in. Anyone can also send a
-  feature suggestion from the footer; only officers can read them.
+- **Everyone** — standings, results and a page per player, no sign-in. Anyone
+  can also send a feature suggestion from the footer; only officers can read
+  them.
 - **Arbiters** — one screen: the open round's matchups, where they report game
   results and forfeits. No roster, no pairing, no past rounds.
 - **Officers** — everything: roster, seasons, pairing, closing rounds, and a
   Suggestions tab to triage what visitors send. Suggestions need
   [`0008_suggestions.sql`](supabase/migrations/0008_suggestions.sql).
+
+The site speaks in everyday words by default ("points", "free round",
+"opponents' strength") and any visitor can switch to chess terms ("score",
+"bye", "Buchholz"). Officers choose which one a first-time visitor sees under
+**Officer tools → Settings**, which needs
+[`0009_site_settings.sql`](supabase/migrations/0009_site_settings.sql); without
+it the site simply defaults to everyday words.
+
+Meeting times, how to join and who to contact are shown on the About page and
+live in [`src/lib/club/info.ts`](src/lib/club/info.ts). Values in square
+brackets are placeholders and show with a dashed outline until replaced.
 
 Both cookies last 30 days per device. Changing a passcode signs everyone out of
 that role.
@@ -73,13 +85,15 @@ failing later with something cryptic.
 
 Open <http://localhost:3000>.
 
-1. Go to **Officers** and enter your passcode.
-2. Add the club to the **Roster** by name. This works with or without a season.
+1. Follow **Officer & arbiter sign-in** in the footer and enter your passcode.
+2. Add the club on the **Roster** tab by name. This works with or without a
+   season.
 3. **Start season** — name it for the term or year.
-4. **Start round 1**, then **Generate matchups**. Every active player is
-   paired — there is no check-in step.
-5. Open a matchup to record who had White in each game and how it finished.
-6. When every game is in, **Close round**.
+4. On **This round**, the four steps walk you through it: **Start round 1**,
+   then **Pair players automatically**. Every active player is paired — there
+   is no check-in step.
+5. Open a match to record who had White in each game and how it finished.
+6. When every game is in, **Finish round**.
 
 ### Catching up on meetings already played
 
@@ -90,11 +104,11 @@ will start from nothing.
 For each past meeting, in order:
 
 1. **Start round**, setting **Date played** to when it actually happened.
-2. Under **Add a matchup by hand**, pick the two players — or *No opponent (bye)*
-   — then open the matchup and fill in its games.
-3. **Close round**, then repeat for the next meeting.
+2. Open **Pair players by hand instead**, pick the two players — or *Nobody
+   (free round)* — then open the match and fill in its games.
+3. **Finish round**, then repeat for the next meeting.
 
-Do not press *Generate matchups* on a backfilled round — that is for rounds the
+Do not press *Pair players automatically* on a backfilled round — that is for rounds the
 site is pairing itself. Once your history is in, the next meeting can be paired
 normally and it will take all of it into account.
 
@@ -149,24 +163,25 @@ link previews, so only set it once the club has its own domain.
 The roster is the field: everyone active is paired every round. If somebody is
 away, either retire them beforehand or forfeit their board afterwards.
 
-Use **Clear and re-pair** to regenerate a round from scratch rather than
-patching it.
+Under **Change the pairings**, **Remove all pairings and start again** clears
+a round so it can be paired from scratch rather than patched.
 
 Retiring a player hides them from future rounds but keeps their games, because
 those games count toward other players' tiebreaks.
 
 ### Results
 
-Open a matchup to report its three games. Each game records who had White —
+Open a match to report its three games. Each game records who had White —
 colours are decided at the board, not by the pairing engine — and takes one of
-six results:
+six results. The buttons name the players in everyday wording and use chess
+notation when chess terms are switched on:
 
-| Button | Meaning |
-| --- | --- |
-| `1–0` `½–½` `0–1` | Played at the board |
-| `+ −` | Black did not appear |
-| `− +` | White did not appear |
-| `− −` | Neither appeared |
+| Everyday words | Chess terms | Meaning |
+| --- | --- | --- |
+| *A won* · *Draw* · *B won* | `1–0` `½–½` `0–1` | Played at the board |
+| *B absent* | `+ −` | The second-named player did not appear |
+| *A absent* | `− +` | The first-named player did not appear |
+| *Both absent* | `− −` | Neither appeared |
 
 A forfeit scores like a real result — a win is still a full point — but it was
 never played, so it is left out of games played and out of **both tiebreaks**.
@@ -177,19 +192,20 @@ who won theirs. Its value follows the round: three points in a three-game round,
 one in a round recorded as a single game. Like a forfeit, it contributes nothing
 to either tiebreak.
 
-Closing a round with games still unreported offers to forfeit them all as
-`− −`, matching the rule that a game not completed by the end of the round is
-forfeited.
+Finishing a round with games still unreported offers to record them all as
+both absent (`− −`), matching the rule that a game not completed by the end of
+the round is forfeited.
 
-### Player detail
+### Player pages
 
-Hovering a name on the standings or results pages — or tapping it on a phone —
-opens that player's record: score, W/D/L, colour balance, both tiebreaks and
-their recent games.
+Every name on the standings and results links to that player's page, also
+reachable from **Players**, which has a search box. It shows their place,
+points, games played, won/drawn/lost, colour balance, both tiebreaks and every
+match of the season.
 
 ## Colours are per round
 
-Ticking **Record who had White** when opening a round decides whether it asks
+Ticking **Record who had White** when starting a round decides whether it asks
 for colours at all. Leave it unticked for a round being keyed in from paper,
 where nobody wrote them down — those games stay blank instead of showing
 "colours not recorded" on every line, and the round says so once in its heading.
@@ -205,8 +221,8 @@ which works from whichever rounds do have the information.
 
 ## Going back over a closed round
 
-**All rounds** in officer tools lists every round of the season. Opening a
-closed one shows it as it stands and asks for the officer passcode again before
+The **All rounds** tab in officer tools lists every round of the season.
+Opening a finished one shows it as it stands and asks for the officer passcode again before
 anything can be changed.
 
 That second step is there because scores and both tiebreaks are *derived* from

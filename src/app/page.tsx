@@ -1,78 +1,228 @@
 import Link from "next/link";
-import { Pawn } from "@/components/pawn";
+import { ChevronRight, SearchIcon } from "@/components/icons";
+import { MatchCard } from "@/components/match-card";
 import { SiteHeader } from "@/components/site-header";
+import {
+  MoreLink,
+  RoundStatusTag,
+  SectionHeading,
+  formatDate,
+} from "@/components/ui";
 import { Wordmark } from "@/components/wordmark";
-import { getActiveSeason, getSeasonHistory } from "@/lib/club/queries";
+import { CLUB_INFO } from "@/lib/club/info";
+import { getSeasonSnapshot } from "@/lib/club/snapshot";
+import { getTerms } from "@/lib/club/wording";
 import { currentRole } from "@/lib/officer/session";
+import { formatPoints, ordinal } from "@/lib/terms";
 
+/** How many players the home page previews before pointing at the full table. */
+const TOP_PLAYERS = 5;
+
+/**
+ * The home page answers the three things people arrive wanting: who is top,
+ * what happened at the last meeting, and what this club is.
+ *
+ * It used to hold one button and a paragraph about tiebreaks. NN/g's homepage
+ * guidance is to show real content rather than describe it, and to give the
+ * main tasks visible weight — so the table and the latest round are here in
+ * miniature, each with one clear way to see the rest.
+ */
 export default async function HomePage() {
-  const [role, season] = await Promise.all([currentRole(), getActiveSeason()]);
-  const history = season ? await getSeasonHistory(season.id) : null;
-  const roundsPlayed =
-    history?.rounds.filter((round) =>
-      history.matchupViews.some(
-        (view) =>
-          view.pairing.round_id === round.id &&
-          view.games.some((game) => game.result !== "pending"),
-      ),
-    ).length ?? 0;
+  const [role, snapshot, terms] = await Promise.all([
+    currentRole(),
+    getSeasonSnapshot(),
+    getTerms(),
+  ]);
+
+  const latestRound = snapshot
+    ? ([...snapshot.history.rounds]
+        .sort((a, b) => b.round_number - a.round_number)
+        .find((round) =>
+          snapshot.history.matchupViews.some((v) => v.pairing.round_id === round.id),
+        ) ?? null)
+    : null;
+  const latestMatches =
+    snapshot && latestRound
+      ? snapshot.history.matchupViews.filter((v) => v.pairing.round_id === latestRound.id)
+      : [];
 
   return (
     <>
       <SiteHeader role={role} currentPath="/" />
 
-      <main className="mx-auto max-w-5xl px-6 py-12 sm:py-20">
-        <p className="label">School chess club</p>
-        <h1 className="mt-4 text-4xl text-balance sm:text-5xl">
-          <Wordmark /> Chess Club
-        </h1>
-
-        {season ? (
-          <p className="text-muted mt-6 max-w-prose leading-relaxed">
-            {season.name} is under way — {roundsPlayed}{" "}
-            {roundsPlayed === 1 ? "round" : "rounds"} played so far. The season runs
-            as one continuous Swiss event, so every club meeting is a round and
-            players can join late or miss a week without falling out of the
-            standings.
+      <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-14">
+        <section>
+          <h1 className="text-4xl text-balance sm:text-5xl">
+            <Wordmark /> Chess Club
+          </h1>
+          <p className="text-muted mt-4 max-w-2xl text-lg leading-relaxed">
+            {CLUB_INFO.about}
           </p>
+
+          {snapshot ? (
+            <p className="mt-5 flex flex-wrap items-center gap-2 text-sm">
+              <span className="tag">{snapshot.season.name}</span>
+              <span className="tag">
+                {snapshot.roundsPlayed}{" "}
+                {snapshot.roundsPlayed === 1 ? "round" : "rounds"} played
+              </span>
+              <span className="tag">
+                {snapshot.standings.length}{" "}
+                {snapshot.standings.length === 1 ? "player" : "players"}
+              </span>
+            </p>
+          ) : null}
+
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Link href="/standings" className="btn-primary">
+              See the standings
+            </Link>
+            <Link href="/players" className="btn">
+              <SearchIcon className="size-4" />
+              Find a player
+            </Link>
+          </div>
+        </section>
+
+        {role === "officer" || role === "arbiter" ? (
+          <Link
+            href={role === "officer" ? "/officer" : "/arbiter"}
+            className="card-link mt-10 flex items-center justify-between gap-4 p-4 sm:p-5"
+          >
+            <span>
+              <span className="block font-semibold">
+                {role === "officer" ? "Officer tools" : "Report results"}
+              </span>
+              <span className="text-muted mt-0.5 block text-sm">
+                {role === "officer"
+                  ? "Start a round, pair players, enter results and manage the roster."
+                  : "Enter the results of this round's games."}
+              </span>
+            </span>
+            <ChevronRight className="size-5 shrink-0" />
+          </Link>
+        ) : null}
+
+        {snapshot ? (
+          <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-8">
+            <section aria-labelledby="top-heading">
+              <SectionHeading id="top-heading">Top of the table</SectionHeading>
+              {snapshot.standings.length === 0 ? (
+                <p className="card text-muted mt-4 p-5">
+                  No results yet. The table fills in once the first games are
+                  reported.
+                </p>
+              ) : (
+                <ol className="card mt-4 p-2">
+                  {snapshot.standings.slice(0, TOP_PLAYERS).map((row) => (
+                    <li key={row.playerId}>
+                      <Link
+                        href={`/players/${row.playerId}`}
+                        className="row-link mx-0 px-3"
+                      >
+                        <span
+                          className={`w-9 shrink-0 text-sm tabular-nums ${row.rank <= 3 ? "font-semibold" : "text-muted"}`}
+                        >
+                          {ordinal(row.rank)}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {snapshot.nameById.get(row.playerId)}
+                        </span>
+                        <span className="shrink-0 text-right tabular-nums">
+                          <span className="font-semibold">
+                            {formatPoints(row.score)}
+                          </span>
+                          <span className="text-muted text-sm">
+                            {" "}
+                            {terms.points.toLowerCase()}
+                          </span>
+                        </span>
+                        <ChevronRight className="text-faint size-4 shrink-0" />
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <MoreLink href="/standings">See the full standings</MoreLink>
+            </section>
+
+            <section aria-labelledby="latest-heading">
+              <SectionHeading
+                id="latest-heading"
+                aside={
+                  latestRound ? (
+                    <span className="flex items-center gap-2">
+                      {formatDate(latestRound.played_on, "short")}
+                      <RoundStatusTag status={latestRound.status} />
+                    </span>
+                  ) : null
+                }
+              >
+                {latestRound ? `Round ${latestRound.round_number}` : "Latest round"}
+              </SectionHeading>
+              {latestRound ? (
+                <div className="mt-4 space-y-3">
+                  {latestMatches.slice(0, 4).map((view) => (
+                    <MatchCard
+                      key={view.pairing.id}
+                      view={view}
+                      nameById={snapshot.nameById}
+                      terms={terms}
+                      tracksColors={latestRound.tracks_colors}
+                      showGames={false}
+                    />
+                  ))}
+                  {latestMatches.length > 4 ? (
+                    <p className="text-muted text-sm">
+                      and {latestMatches.length - 4} more {terms.matches}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="card text-muted mt-4 p-5">
+                  No round has been paired yet.
+                </p>
+              )}
+              <MoreLink href="/results">See every result</MoreLink>
+            </section>
+          </div>
         ) : (
-          <p className="text-muted mt-6 max-w-prose leading-relaxed">
-            No season is running yet. An officer needs to start one before pairings
-            can be made.
+          <p className="card text-muted mt-12 max-w-2xl p-5">
+            No season is running yet. Once officers start one, the standings and
+            results appear here.
           </p>
         )}
 
-        <div className="mt-10 flex flex-wrap gap-3">
-          <Link
-            href="/standings"
-            className="border px-5 py-2.5 text-sm transition-colors hover:bg-ink hover:text-cream"
-            style={{ borderColor: "var(--color-ink)" }}
-          >
-            View standings
-          </Link>
-          {role === "officer" ? (
-            <Link
-              href="/officer"
-              className="text-muted border px-5 py-2.5 text-sm transition-colors hover:text-ink"
-              style={{ borderColor: "var(--rule-strong)" }}
-            >
-              Run a round
-            </Link>
-          ) : null}
-        </div>
-
-        <div
-          className="mt-20 flex items-start gap-4 border-t pt-8"
-          style={{ borderColor: "var(--rule)" }}
-        >
-          <Pawn className="text-faint mt-0.5 h-5 w-auto shrink-0" />
-          <p className="text-faint max-w-prose text-sm leading-relaxed">
-            Standings are ordered by score, then Buchholz, then Sonneborn-Berger.
-            Because attendance varies, games played is shown next to every score —
-            points alone are misleading when players have sat out different numbers
-            of rounds.
-          </p>
-        </div>
+        <section aria-labelledby="how-heading" className="mt-16">
+          <SectionHeading id="how-heading">How a season works</SectionHeading>
+          <ol className="mt-5 grid gap-4 sm:grid-cols-3">
+            {[
+              {
+                title: "Every meeting is a round",
+                body: "Come when you can. Missing a week does not drop you from the table.",
+              },
+              {
+                title: `Everyone gets a ${terms.match}`,
+                body: "You play three games against one opponent, usually someone on similar points.",
+              },
+              {
+                title: "Each game is a point",
+                body: "A win is 1 point and a draw is ½. Most points at the end of the season wins.",
+              },
+            ].map((step, index) => (
+              <li key={step.title} className="card p-5">
+                <span className="bg-ink text-cream flex size-8 items-center justify-center rounded-full text-sm font-semibold">
+                  {index + 1}
+                </span>
+                <h3 className="mt-3 text-lg">{step.title}</h3>
+                <p className="text-muted mt-1 text-[0.9375rem] leading-relaxed">
+                  {step.body}
+                </p>
+              </li>
+            ))}
+          </ol>
+          <MoreLink href="/about">About the club and how to join</MoreLink>
+        </section>
       </main>
     </>
   );

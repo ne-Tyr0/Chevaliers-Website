@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { formatMatchupScore, MatchupGames } from "@/components/matchup-games";
 import { ReviewBanner, ReviewGate } from "@/components/review-gate";
 import { SiteHeader } from "@/components/site-header";
+import { ErrorNote, Note, PageHeader, WordingToggle } from "@/components/ui";
 import { getMatchup, getRound, getRoster } from "@/lib/club/queries";
+import { getTerms } from "@/lib/club/wording";
 import { currentRole, reviewExpiresAt } from "@/lib/officer/session";
 
-export const metadata: Metadata = { title: "Matchup" };
+export const metadata: Metadata = { title: "Enter results" };
 
 export default async function MatchupPage({
   params,
@@ -19,7 +20,11 @@ export default async function MatchupPage({
   const { pairingId } = await params;
   const { error } = await searchParams;
 
-  const [view, roster] = await Promise.all([getMatchup(pairingId), getRoster()]);
+  const [view, roster, terms] = await Promise.all([
+    getMatchup(pairingId),
+    getRoster(),
+    getTerms(),
+  ]);
   if (!view) notFound();
 
   const round = await getRound(view.pairing.round_id);
@@ -35,7 +40,17 @@ export default async function MatchupPage({
     ? (nameById.get(view.pairing.player_b_id) ?? "Unknown player")
     : "Bye";
 
-  const home = role === "officer" ? "/officer" : "/arbiter";
+  // Back to wherever this matchup was opened from, in words that say what it is.
+  const crumbs =
+    role === "officer"
+      ? closed && round
+        ? [
+            { href: "/officer", label: "Officer tools" },
+            { href: `/officer/round/${round.id}`, label: `Round ${round.round_number}` },
+          ]
+        : [{ href: "/officer", label: "Officer tools" }]
+      : [{ href: "/arbiter", label: "Report results" }];
+
   const returnTo = `/matchup/${pairingId}`;
   const outstanding = view.games.filter((g) => g.result === "pending").length;
 
@@ -43,39 +58,33 @@ export default async function MatchupPage({
     <>
       <SiteHeader role={role} currentPath="/matchup" />
 
-      <main className="mx-auto max-w-3xl px-6 py-10 sm:py-16">
-        <Link href={home} className="text-faint text-sm hover:text-ink">
-          ← Back to {role === "officer" ? "officer tools" : "arbiter tools"}
-        </Link>
-
-        <p className="label mt-6">Board {view.pairing.board_number}</p>
-        <h1 className="mt-2 text-3xl text-balance">
-          {nameA} <span className="text-faint">v</span> {nameB}
-        </h1>
+      <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
+        <PageHeader
+          crumbs={crumbs}
+          eyebrow={`${round ? `Round ${round.round_number} · ` : ""}${terms.board} ${view.pairing.board_number}`}
+          title={
+            <>
+              {nameA} <span className="text-muted font-normal">v</span> {nameB}
+            </>
+          }
+        />
 
         {view.pairing.player_b_id ? (
-          <p className="text-muted mt-3 text-sm tabular-nums">
-            {formatMatchupScore(view)}
-            {outstanding > 0 ? (
-              <span className="text-faint">
-                {" "}
-                · {outstanding} of {view.games.length} still to report
-              </span>
-            ) : (
-              <span className="text-faint"> · complete</span>
-            )}
+          <p className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="tag tag-strong tabular-nums">
+              {formatMatchupScore(view)}
+            </span>
+            <span className="tag">
+              {outstanding > 0
+                ? `${outstanding} of ${view.games.length} games still to enter`
+                : "All games entered"}
+            </span>
           </p>
         ) : null}
 
-        {typeof error === "string" ? (
-          <p
-            role="alert"
-            className="mt-6 border-l-2 py-1 pl-4 text-sm"
-            style={{ borderColor: "var(--color-ink)" }}
-          >
-            {error}
-          </p>
-        ) : null}
+        <WordingToggle terms={terms} returnTo={returnTo} className="mt-5" />
+
+        {typeof error === "string" ? <ErrorNote>{error}</ErrorNote> : null}
 
         {closed && readOnly ? (
           <ReviewGate returnTo={returnTo} roundNumber={round.round_number} />
@@ -89,15 +98,16 @@ export default async function MatchupPage({
           nameA={nameA}
           nameB={nameB}
           returnTo={returnTo}
+          terms={terms}
           tracksColors={round?.tracks_colors ?? true}
           readOnly={readOnly}
         />
 
         {view.pairing.is_rematch ? (
-          <p className="text-faint mt-6 max-w-prose text-xs leading-relaxed">
-            These two have met before this season. The engine only repeats a
-            matchup when no other pairing of the round was possible.
-          </p>
+          <Note>
+            These two have played each other before this season. That only
+            happens when no other pairing of the round was possible.
+          </Note>
         ) : null}
       </main>
     </>

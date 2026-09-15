@@ -1,8 +1,19 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { formatMatchupScore } from "@/components/matchup-games";
+import { CheckIcon, ChevronDown, ChevronRight, LockIcon } from "@/components/icons";
 import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
+import { StaffMatchList } from "@/components/staff-match-list";
+import {
+  EmptyState,
+  ErrorNote,
+  Note,
+  PageHeader,
+  RoundStatusTag,
+  SectionHeading,
+  WordingToggle,
+  formatDate,
+} from "@/components/ui";
 import {
   addManualMatchup,
   addPlayer,
@@ -12,23 +23,25 @@ import {
   deleteMatchup,
   deleteSuggestion,
   generatePairings,
+  setDefaultWording,
   setPlayerActive,
   setSuggestionStatus,
   startRound,
   unlockRole,
 } from "@/lib/club/actions";
+import { CLUB_INFO, isPlaceholder } from "@/lib/club/info";
 import {
   getActiveSeason,
   getRoster,
   getRoundMatchups,
   getSeasonHistory,
-  type MatchupView,
 } from "@/lib/club/queries";
 import {
   countNewSuggestions,
   getSuggestions,
   SUGGESTION_STATUSES,
 } from "@/lib/club/suggestions";
+import { getDefaultWording, getTerms } from "@/lib/club/wording";
 import { currentRole } from "@/lib/officer/session";
 import type {
   PlayerRow,
@@ -37,7 +50,25 @@ import type {
   SuggestionStatus,
 } from "@/lib/supabase/database.types";
 
-export const metadata: Metadata = { title: "Officers" };
+export const metadata: Metadata = { title: "Officer tools" };
+
+type OfficerTab = "round" | "rounds" | "roster" | "suggestions" | "settings";
+
+const TABS: { id: OfficerTab; label: string }[] = [
+  { id: "round", label: "This round" },
+  { id: "rounds", label: "All rounds" },
+  { id: "roster", label: "Roster" },
+  { id: "suggestions", label: "Suggestions" },
+  { id: "settings", label: "Settings" },
+];
+
+function parseTab(value: unknown): OfficerTab {
+  return TABS.some((tab) => tab.id === value) ? (value as OfficerTab) : "round";
+}
+
+function tabHref(tab: OfficerTab): string {
+  return tab === "round" ? "/officer" : `/officer?tab=${tab}`;
+}
 
 export default async function OfficerPage({
   searchParams,
@@ -50,55 +81,113 @@ export default async function OfficerPage({
     return (
       <>
         <SiteHeader role={role} currentPath="/officer" />
-        <PasscodeGate error={error} />
+        <PasscodeGate error={error} signedInAs={role} />
       </>
     );
   }
 
-  const tab: OfficerTab = params.tab === "suggestions" ? "suggestions" : "round";
-  const [season, newSuggestions] = await Promise.all([
-    tab === "round" ? getActiveSeason() : null,
-    countNewSuggestions(),
-  ]);
+  const tab = parseTab(params.tab);
+  const newSuggestions = await countNewSuggestions();
 
   return (
     <>
       <SiteHeader role={role} currentPath="/officer" />
 
-      <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
-        <p className="label">Officers</p>
-        <h1 className="mt-3 text-3xl sm:text-4xl">
-          {tab === "round" ? "Run a round" : "Suggestions"}
-        </h1>
+      <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
+        <PageHeader title="Officer tools" />
 
         <OfficerTabs current={tab} newSuggestions={newSuggestions} />
 
         {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-        {tab === "suggestions" ? (
-          <SuggestionsPanel />
-        ) : (
-          <>
-            {season ? (
-              <SeasonPanel seasonId={season.id} seasonName={season.name} />
-            ) : (
-              <NewSeasonForm />
-            )}
-
-            <RosterSection />
-          </>
-        )}
+        <div className="mt-8">
+          {tab === "round" ? <RoundPanel /> : null}
+          {tab === "rounds" ? <RoundsPanel /> : null}
+          {tab === "roster" ? <RosterPanel /> : null}
+          {tab === "suggestions" ? <SuggestionsPanel /> : null}
+          {tab === "settings" ? <SettingsPanel saved={params.saved === "1"} /> : null}
+        </div>
       </main>
     </>
   );
 }
 
-type OfficerTab = "round" | "suggestions";
+// ---------------------------------------------------------------------------
+// Signing in
+// ---------------------------------------------------------------------------
+
+function PasscodeGate({
+  error,
+  signedInAs,
+}: {
+  error: string | null;
+  signedInAs: string | null;
+}) {
+  return (
+    <main className="mx-auto w-full max-w-md px-4 py-10 sm:px-6 sm:py-20">
+      <Pawn className="mb-6 h-9 w-auto" />
+      <h1 className="text-3xl">Officer &amp; arbiter sign-in</h1>
+      <p className="text-muted mt-3 leading-relaxed">
+        For the people running the club. Officers run rounds and look after the
+        roster; arbiters enter results during a meeting. Everyone else can see
+        the{" "}
+        <Link href="/standings" className="link">
+          standings
+        </Link>{" "}
+        and{" "}
+        <Link href="/results" className="link">
+          results
+        </Link>{" "}
+        without signing in.
+      </p>
+
+      {signedInAs === "arbiter" ? (
+        <p className="card mt-6 p-4 text-sm leading-relaxed">
+          You are signed in as an arbiter.{" "}
+          <Link href="/arbiter" className="link font-medium">
+            Go to Report results
+          </Link>
+          , or enter the officer passcode below.
+        </p>
+      ) : null}
+
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+
+      <form action={unlockRole} className="card mt-8 p-5">
+        <label className="label block" htmlFor="passcode">
+          Passcode
+        </label>
+        <input
+          id="passcode"
+          name="passcode"
+          type="password"
+          autoComplete="current-password"
+          required
+          className="field mt-1.5"
+        />
+        <button type="submit" className="btn-primary mt-4 w-full">
+          <LockIcon className="size-4" />
+          Sign in
+        </button>
+        <p className="text-muted mt-3 text-sm">
+          The passcode decides whether you get officer or arbiter tools. You
+          stay signed in on this device for 30 days, or until you press Lock.
+        </p>
+      </form>
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------------------
 
 /**
- * Switches between the officer screens. Plain links carrying `?tab=`, so each
- * tab is its own URL: a status change lands back on the tab it came from, and
- * the round screen stays the default the header's "Run a round" opens.
+ * One tab per job, each its own URL, so an action lands back on the tab it was
+ * started from and a tab can be bookmarked.
+ *
+ * On a phone the tabs wrap to a second line rather than scrolling sideways, so
+ * all five stay in view and the current one is never hidden off the edge.
  */
 function OfficerTabs({
   current,
@@ -107,49 +196,704 @@ function OfficerTabs({
   current: OfficerTab;
   newSuggestions: number;
 }) {
-  const tabs: { id: OfficerTab; href: string; label: string; badge?: number }[] = [
-    { id: "round", href: "/officer", label: "Run a round" },
-    {
-      id: "suggestions",
-      href: "/officer?tab=suggestions",
-      label: "Suggestions",
-      badge: newSuggestions,
-    },
-  ];
-
   return (
     <nav
       aria-label="Officer tools"
-      className="mt-8 flex flex-wrap gap-x-6 border-b"
-      style={{ borderColor: "var(--rule)" }}
+      className="mt-6 border-b"
+      style={{ borderColor: "var(--rule-strong)" }}
     >
-      {tabs.map((item) => {
-        const active = item.id === current;
-        return (
-          <Link
-            key={item.id}
-            href={item.href}
-            aria-current={active ? "page" : undefined}
-            className={`-mb-px flex items-center gap-2 border-b py-3 text-sm transition-colors ${
-              active ? "text-ink" : "text-muted border-transparent hover:text-ink"
-            }`}
-            style={active ? { borderColor: "var(--color-ink)" } : undefined}
-          >
-            {item.label}
-            {item.badge ? (
-              <span
-                className="bg-ink text-cream min-w-5 rounded-full px-1.5 text-center text-xs leading-5 tabular-nums"
-                aria-label={`${item.badge} new`}
+      <ul className="-ml-3 flex flex-wrap gap-x-1">
+        {TABS.map((item) => {
+          const active = item.id === current;
+          const badge = item.id === "suggestions" ? newSuggestions : 0;
+          return (
+            <li key={item.id}>
+              <Link
+                href={tabHref(item.id)}
+                aria-current={active ? "page" : undefined}
+                className={`relative flex min-h-12 items-center gap-2 rounded-t-md px-3 text-[0.9375rem] transition-colors ${
+                  active
+                    ? "text-ink font-semibold"
+                    : "text-muted hover:bg-cream-deep hover:text-ink"
+                }`}
               >
-                {item.badge}
-              </span>
-            ) : null}
-          </Link>
-        );
-      })}
+                {item.label}
+                {badge ? (
+                  <span
+                    className="bg-ink text-cream min-w-5 rounded-full px-1.5 text-center text-xs leading-5 tabular-nums"
+                    aria-label={`${badge} new`}
+                  >
+                    {badge}
+                  </span>
+                ) : null}
+                {active ? (
+                  <span aria-hidden className="bg-ink absolute inset-x-2 bottom-0 h-[3px] rounded-t" />
+                ) : null}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }
+
+// ---------------------------------------------------------------------------
+// This round
+// ---------------------------------------------------------------------------
+
+type Phase = "start" | "pair" | "results" | "finish";
+
+const STEPS: { id: Phase; title: string }[] = [
+  { id: "start", title: "Start the round" },
+  { id: "pair", title: "Pair the players" },
+  { id: "results", title: "Enter results" },
+  { id: "finish", title: "Finish the round" },
+];
+
+/**
+ * Running a meeting as four steps, with the current one open and a single
+ * main button for it.
+ *
+ * The old screen showed every control at once, so knowing what to do next
+ * meant knowing the whole process already. Numbered, named steps are the
+ * pattern NN/g recommends for a sequence like this: they say where you are,
+ * what is done, and what comes after.
+ */
+async function RoundPanel() {
+  const season = await getActiveSeason();
+  if (!season) return <NewSeasonStep />;
+
+  const [roster, history, terms] = await Promise.all([
+    getRoster(),
+    getSeasonHistory(season.id),
+    getTerms(),
+  ]);
+
+  const currentRound = history.rounds.at(-1) ?? null;
+  const matches = currentRound ? await getRoundMatchups(currentRound.id) : [];
+  const active = roster.filter((p) => p.is_active);
+  const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
+
+  const games = matches.flatMap((view) => view.games);
+  const outstanding = games.filter((g) => g.result === "pending").length;
+
+  // Hand-pairing 22 boards out of 44 names is unworkable if the list never
+  // shrinks, so offer only the players who do not yet have a game this round.
+  const seated = new Set<string>();
+  for (const { pairing } of matches) {
+    seated.add(pairing.player_a_id);
+    if (pairing.player_b_id) seated.add(pairing.player_b_id);
+  }
+  const unpaired = active.filter((player) => !seated.has(player.id));
+
+  const phase: Phase =
+    !currentRound || currentRound.status === "completed"
+      ? "start"
+      : matches.length === 0
+        ? "pair"
+        : outstanding > 0
+          ? "results"
+          : "finish";
+  const nextNumber = (currentRound?.round_number ?? 0) + 1;
+  const roundOpen = currentRound !== null && currentRound.status !== "completed";
+
+  return (
+    <div>
+      <p className="text-muted">
+        {season.name} · {history.rounds.length}{" "}
+        {history.rounds.length === 1 ? "round" : "rounds"} so far ·{" "}
+        {active.length} active players
+      </p>
+
+      <Stepper phase={phase} />
+
+      <section
+        aria-labelledby="step-heading"
+        className="mt-6 rounded-xl border-2 p-5 sm:p-6"
+        style={{
+          borderColor: "var(--color-ink)",
+          backgroundColor: "var(--color-cream-light)",
+        }}
+      >
+        <p className="text-muted text-sm">
+          Step {STEPS.findIndex((s) => s.id === phase) + 1} of {STEPS.length}
+        </p>
+
+        {phase === "start" ? (
+          <>
+            <h2 id="step-heading" className="mt-1 text-2xl">
+              Start round {nextNumber}
+            </h2>
+            <p className="text-muted mt-2 max-w-prose leading-relaxed">
+              {currentRound
+                ? `Round ${currentRound.round_number} is finished. `
+                : "This is the first round of the season. "}
+              Starting a round opens it for pairing. Check the{" "}
+              <Link href={tabHref("roster")} className="link">
+                roster
+              </Link>{" "}
+              first: everyone marked active will be paired.
+            </p>
+            <form action={startRound} className="mt-5 flex flex-wrap items-end gap-4">
+              <div>
+                <label className="label block" htmlFor="played-on">
+                  Date played <span className="font-normal">(leave blank for today)</span>
+                </label>
+                <input
+                  id="played-on"
+                  name="playedOn"
+                  type="date"
+                  className="field mt-1.5 w-auto"
+                />
+              </div>
+              <label className="flex min-h-11 items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  name="tracksColors"
+                  defaultChecked
+                  className="size-5 accent-[var(--color-ink)]"
+                />
+                <span>Record who had White</span>
+              </label>
+              <button type="submit" className="btn-primary">
+                Start round {nextNumber}
+              </button>
+            </form>
+            <p className="text-muted mt-3 max-w-prose text-sm leading-relaxed">
+              Untick &ldquo;Record who had White&rdquo; only for a round being
+              copied in from paper where nobody wrote colours down. You can
+              change it while the round is open.
+            </p>
+          </>
+        ) : null}
+
+        {phase === "pair" && currentRound ? (
+          <>
+            <h2 id="step-heading" className="mt-1 text-2xl">
+              Pair the players for round {currentRound.round_number}
+            </h2>
+            <p className="text-muted mt-2 max-w-prose leading-relaxed">
+              All {active.length} active players get an opponent on similar
+              points, for a {terms.match} of three games.
+              {active.length % 2 === 1
+                ? ` There is an odd number, so one player gets a ${terms.bye}.`
+                : ""}
+            </p>
+            <form action={generatePairings} className="mt-5">
+              <input type="hidden" name="roundId" value={currentRound.id} />
+              <button type="submit" className="btn-primary">
+                Pair players automatically
+              </button>
+            </form>
+          </>
+        ) : null}
+
+        {phase === "results" && currentRound ? (
+          <>
+            <h2 id="step-heading" className="mt-1 text-2xl">
+              Enter the results of round {currentRound.round_number}
+            </h2>
+            <p className="text-muted mt-2 max-w-prose leading-relaxed">
+              Open each {terms.match} below to enter who had White and how each
+              game ended. Arbiters can do this too from their own sign-in.
+            </p>
+            <Progress done={games.length - outstanding} total={games.length} />
+          </>
+        ) : null}
+
+        {phase === "finish" && currentRound ? (
+          <>
+            <h2 id="step-heading" className="mt-1 text-2xl">
+              Finish round {currentRound.round_number}
+            </h2>
+            <p className="text-muted mt-2 max-w-prose leading-relaxed">
+              Every game has a result. Finishing the round locks it, and lets you
+              start the next one. You can still correct a finished round later
+              from All rounds.
+            </p>
+            {unpaired.length > 0 ? (
+              <p className="mt-3 max-w-prose rounded-lg border-2 px-4 py-3" style={{ borderColor: "var(--color-ink)" }}>
+                <strong className="font-semibold">
+                  {unpaired.length} active {unpaired.length === 1 ? "player has" : "players have"} no {terms.match} this round.
+                </strong>{" "}
+                Finish only if they were not playing. Otherwise pair them below
+                first.
+              </p>
+            ) : null}
+            <form action={completeRound} className="mt-5">
+              <input type="hidden" name="roundId" value={currentRound.id} />
+              <button type="submit" className="btn-primary">
+                <CheckIcon className="size-4" />
+                Finish round {currentRound.round_number}
+              </button>
+            </form>
+          </>
+        ) : null}
+      </section>
+
+      {roundOpen && matches.length > 0 && currentRound ? (
+        <section aria-labelledby="matches-heading" className="mt-10">
+          <SectionHeading
+            id="matches-heading"
+            aside={`${matches.length} ${matches.length === 1 ? terms.match : terms.matches}`}
+          >
+            Round {currentRound.round_number} {terms.matches}
+          </SectionHeading>
+          <WordingToggle terms={terms} returnTo="/officer" className="mt-3" />
+          <div className="mt-4">
+            <StaffMatchList
+              matches={matches}
+              nameById={nameById}
+              terms={terms}
+              aside={(view) => (
+                <form action={deleteMatchup} className="flex justify-end">
+                  <input type="hidden" name="pairingId" value={view.pairing.id} />
+                  <button
+                    type="submit"
+                    className="btn-quiet sm:h-full"
+                    aria-label={`Remove ${terms.board.toLowerCase()} ${view.pairing.board_number}`}
+                  >
+                    Remove
+                  </button>
+                </form>
+              )}
+            />
+          </div>
+
+          {phase === "results" ? (
+            <Disclosure title={`Finish without ${outstanding} missing ${outstanding === 1 ? "result" : "results"}`}>
+              <p className="text-muted max-w-prose leading-relaxed">
+                If some games were never played, finishing now records each of
+                them as both players absent: nobody gets a point for them.
+              </p>
+              <form action={completeRound} className="mt-4">
+                <input type="hidden" name="roundId" value={currentRound.id} />
+                <input type="hidden" name="forfeitUnplayed" value="true" />
+                <button type="submit" className="btn">
+                  Finish round, marking {outstanding}{" "}
+                  {outstanding === 1 ? "game" : "games"} as not played
+                </button>
+              </form>
+            </Disclosure>
+          ) : null}
+        </section>
+      ) : null}
+
+      {roundOpen && currentRound ? (
+        <Disclosure
+          title={phase === "pair" ? "Pair players by hand instead" : "Change the pairings"}
+          defaultOpen={phase !== "pair" && unpaired.length > 0}
+        >
+          <ManualMatchupForm
+            roundId={currentRound.id}
+            players={unpaired}
+            totalActive={active.length}
+            byeLabel={terms.bye}
+          />
+          {matches.length > 0 ? (
+            <form
+              action={clearPairings}
+              className="mt-6 border-t pt-5"
+              style={{ borderColor: "var(--rule)" }}
+            >
+              <input type="hidden" name="roundId" value={currentRound.id} />
+              <p className="text-muted max-w-prose text-sm leading-relaxed">
+                Starting again removes every {terms.match} in this round, along
+                with any results already entered for them.
+              </p>
+              <button type="submit" className="btn mt-3">
+                Remove all pairings and start again
+              </button>
+            </form>
+          ) : null}
+        </Disclosure>
+      ) : null}
+    </div>
+  );
+}
+
+function Stepper({ phase }: { phase: Phase }) {
+  const currentIndex = STEPS.findIndex((s) => s.id === phase);
+  return (
+    <ol className="mt-6 grid grid-cols-4 gap-2" aria-label="Steps for running a round">
+      {STEPS.map((step, index) => {
+        const state =
+          index < currentIndex ? "done" : index === currentIndex ? "current" : "upcoming";
+        return (
+          <li
+            key={step.id}
+            aria-current={state === "current" ? "step" : undefined}
+            className="flex flex-col items-center gap-1.5 text-center sm:flex-row sm:gap-2.5 sm:text-left"
+          >
+            <span
+              className={`flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${
+                state === "upcoming" ? "text-muted" : "bg-ink text-cream"
+              }`}
+              style={{
+                borderColor: state === "upcoming" ? "var(--rule-strong)" : "var(--color-ink)",
+              }}
+            >
+              {state === "done" ? <CheckIcon className="size-4" /> : index + 1}
+            </span>
+            <span
+              className={`text-xs leading-tight sm:text-sm ${
+                state === "current" ? "font-semibold" : "text-muted"
+              }`}
+            >
+              {step.title}
+              <span className="sr-only">
+                {state === "done" ? " (done)" : state === "current" ? " (current step)" : ""}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function Progress({ done, total }: { done: number; total: number }) {
+  return (
+    <div className="mt-5 max-w-md">
+      <p className="font-medium">
+        {done} of {total} games entered
+      </p>
+      <div
+        className="mt-2 h-2 overflow-hidden rounded-full"
+        style={{ backgroundColor: "var(--color-cream-deep)" }}
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={done}
+        aria-label="Games entered"
+      >
+        <div
+          className="bg-ink h-full rounded-full"
+          style={{ width: `${total ? (done / total) * 100 : 0}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Less common actions, kept out of the way until asked for. */
+function Disclosure({
+  title,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="card group mt-6" open={defaultOpen}>
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 font-medium">
+        {title}
+        <ChevronDown className="size-5 shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t px-5 py-5" style={{ borderColor: "var(--rule)" }}>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function NewSeasonStep() {
+  return (
+    <section
+      className="rounded-xl border-2 p-5 sm:p-6"
+      style={{
+        borderColor: "var(--color-ink)",
+        backgroundColor: "var(--color-cream-light)",
+      }}
+    >
+      <h2 className="text-2xl">Start a season</h2>
+      <p className="text-muted mt-2 max-w-prose leading-relaxed">
+        No season is running. A season is the whole competition — usually a
+        school year or a term — and every round belongs to one. You only need a
+        new one when the club starts over from zero points.
+      </p>
+      <form action={createSeason} className="mt-5 flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1 sm:max-w-xs">
+          <label className="label block" htmlFor="season-name">
+            Season name
+          </label>
+          <input
+            id="season-name"
+            name="name"
+            required
+            placeholder="School Year 2026–2027"
+            className="field mt-1.5"
+          />
+        </div>
+        <button type="submit" className="btn-primary">
+          Start season
+        </button>
+      </form>
+    </section>
+  );
+}
+
+/**
+ * Add a match by hand.
+ *
+ * How a club catches up: meetings played before the site existed go in round by
+ * round, then each match's games are filled in from its own page.
+ */
+function ManualMatchupForm({
+  roundId,
+  players,
+  totalActive,
+  byeLabel,
+}: {
+  roundId: string;
+  /** Only those without a game in this round — the list shrinks as you pair. */
+  players: PlayerRow[];
+  totalActive: number;
+  byeLabel: string;
+}) {
+  return (
+    <div>
+      <p className="text-muted max-w-prose leading-relaxed">
+        Choose two players yourself. Only players without a game this round are
+        listed, so the choices shrink as you go.{" "}
+        <span className="font-medium text-ink">
+          {players.length === 0
+            ? `All ${totalActive} are paired.`
+            : `${players.length} of ${totalActive} still to pair.`}
+        </span>
+      </p>
+
+      {players.length === 0 ? (
+        <p className="text-muted mt-3 text-sm">
+          To pair someone differently, remove their current match first.
+        </p>
+      ) : (
+        <>
+          <form action={addManualMatchup} className="mt-4 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="roundId" value={roundId} />
+
+            <SelectField label="Player" name="playerAId" id="player-a" required>
+              {players.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {player.full_name}
+                </option>
+              ))}
+            </SelectField>
+
+            <SelectField label="Opponent" name="playerBId" id="player-b">
+              <option value="bye">Nobody ({byeLabel})</option>
+              {players.map((player) => (
+                <option key={player.id} value={player.id}>
+                  {player.full_name}
+                </option>
+              ))}
+            </SelectField>
+
+            <button type="submit" className="btn-primary">
+              Add match
+            </button>
+          </form>
+
+          <details className="group mt-4">
+            <summary className="btn-quiet w-fit list-none">
+              <span className="group-open:hidden">See who is still to pair ({players.length})</span>
+              <span className="hidden group-open:inline">Hide the list</span>
+            </summary>
+            <p className="text-muted mt-3 max-w-prose text-sm leading-relaxed">
+              {players.map((p) => p.full_name).join(", ")}.
+            </p>
+          </details>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  name,
+  id,
+  required,
+  children,
+}: {
+  label: string;
+  name: string;
+  id: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="w-full min-w-0 sm:w-auto sm:flex-1 sm:max-w-xs">
+      <label className="label block" htmlFor={id}>
+        {label}
+      </label>
+      <select
+        id={id}
+        name={name}
+        required={required}
+        defaultValue=""
+        className="field mt-1.5"
+      >
+        <option value="" disabled>
+          Choose
+        </option>
+        {children}
+      </select>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// All rounds
+// ---------------------------------------------------------------------------
+
+/**
+ * Every round of the season, newest first, as a way back into the ones already
+ * finished. Correcting a finished round asks for the passcode again on the way in.
+ */
+async function RoundsPanel() {
+  const season = await getActiveSeason();
+  if (!season) {
+    return (
+      <EmptyState
+        action={
+          <Link href={tabHref("round")} className="btn">
+            Start a season
+          </Link>
+        }
+      >
+        No season is running, so there are no rounds yet.
+      </EmptyState>
+    );
+  }
+
+  const history = await getSeasonHistory(season.id);
+  const ordered: RoundRow[] = [...history.rounds].sort(
+    (a, b) => b.round_number - a.round_number,
+  );
+
+  return (
+    <section>
+      <SectionHeading aside={`${ordered.length} in ${season.name}`}>All rounds</SectionHeading>
+      <p className="text-muted mt-2 max-w-prose leading-relaxed">
+        Open a round to check or correct its results. Finished rounds ask for the
+        passcode again before anything can be changed.
+      </p>
+      {ordered.length === 0 ? (
+        <EmptyState>No rounds yet this season.</EmptyState>
+      ) : (
+        <ul className="mt-5 space-y-2">
+          {ordered.map((round) => (
+            <li key={round.id}>
+              <Link
+                href={`/officer/round/${round.id}`}
+                className="card-link flex items-center gap-4 px-4 py-3"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">Round {round.round_number}</span>
+                  <span className="text-muted block text-sm">
+                    {formatDate(round.played_on)}
+                    {round.tracks_colors ? "" : " · colours not recorded"}
+                  </span>
+                </span>
+                <RoundStatusTag status={round.status} />
+                <ChevronRight className="size-5 shrink-0" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Roster
+// ---------------------------------------------------------------------------
+
+async function RosterPanel() {
+  const roster = await getRoster();
+  const active = roster.filter((p) => p.is_active).length;
+
+  return (
+    <section>
+      <SectionHeading aside={`${active} active · ${roster.length - active} retired`}>
+        Roster
+      </SectionHeading>
+      <p className="text-muted mt-2 max-w-prose leading-relaxed">
+        Everyone marked active is paired each round. Names appear on the public
+        site, so use the form the club is comfortable publishing.
+      </p>
+
+      <form action={addPlayer} className="card mt-5 flex flex-wrap items-end gap-3 p-4 sm:p-5">
+        <div className="min-w-0 flex-1">
+          <label className="label block" htmlFor="player-name">
+            New player&rsquo;s name
+          </label>
+          <input
+            id="player-name"
+            name="fullName"
+            required
+            placeholder="Surname, Given names"
+            className="field mt-1.5"
+          />
+        </div>
+        <button type="submit" className="btn-primary">
+          Add player
+        </button>
+      </form>
+
+      {roster.length > 0 ? (
+        <ul className="card mt-5 p-2">
+          {roster.map((player) => (
+            <li
+              key={player.id}
+              className="flex min-h-14 items-center justify-between gap-3 border-b px-3 py-2 last:border-b-0"
+              style={{ borderColor: "var(--rule)" }}
+            >
+              <span className="min-w-0">
+                <Link
+                  href={`/players/${player.id}`}
+                  className={`link ${player.is_active ? "" : "text-muted"}`}
+                >
+                  {player.full_name}
+                </Link>
+                <span className="text-muted block text-sm">
+                  {[player.grade, player.is_active ? "Active" : "Retired"]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </span>
+              <form action={setPlayerActive}>
+                <input type="hidden" name="playerId" value={player.id} />
+                <input
+                  type="hidden"
+                  name="active"
+                  value={player.is_active ? "false" : "true"}
+                />
+                <button type="submit" className="btn-quiet">
+                  {player.is_active ? "Retire" : "Bring back"}
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <Note>
+        Retiring a player stops them being paired but keeps their games, because
+        those games count towards other players&rsquo; tiebreaks.
+      </Note>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions
+// ---------------------------------------------------------------------------
 
 const STATUS_LABELS: Record<SuggestionStatus, string> = {
   new: "New",
@@ -175,20 +919,21 @@ async function SuggestionsPanel() {
   }
 
   return (
-    <section className="mt-8">
-      <p className="text-muted max-w-prose text-sm leading-relaxed">
+    <section>
+      <SectionHeading>Suggestions</SectionHeading>
+      <p className="text-muted mt-2 max-w-prose leading-relaxed">
         Sent by visitors from the{" "}
-        <Link href="/suggest" className="underline underline-offset-2">
+        <Link href="/suggest" className="link">
           suggestion page
-        </Link>{" "}
-        in the footer, newest first. Only officers see these. Setting a status
-        clears a suggestion from the count on this tab.
+        </Link>
+        , newest first. Only officers see these. Giving one a status takes it off
+        the count on this tab.
       </p>
 
       {suggestions.length > 0 ? (
-        <p className="text-faint mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <p className="mt-4 flex flex-wrap gap-2">
           {SUGGESTION_STATUSES.map((status) => (
-            <span key={status}>
+            <span key={status} className="tag">
               {counts.get(status) ?? 0} {STATUS_LABELS[status].toLowerCase()}
             </span>
           ))}
@@ -196,9 +941,9 @@ async function SuggestionsPanel() {
       ) : null}
 
       {suggestions.length === 0 ? (
-        <Note>No suggestions yet.</Note>
+        <EmptyState>No suggestions yet.</EmptyState>
       ) : (
-        <ul className="mt-6 border-t" style={{ borderColor: "var(--rule)" }}>
+        <ul className="mt-5 space-y-3">
           {suggestions.map((suggestion) => (
             <SuggestionItem key={suggestion.id} suggestion={suggestion} />
           ))}
@@ -212,31 +957,34 @@ function SuggestionItem({ suggestion }: { suggestion: SuggestionRow }) {
   const settled = suggestion.status === "done" || suggestion.status === "declined";
 
   return (
-    <li className="border-b py-5" style={{ borderColor: "var(--rule)" }}>
+    <li className="card p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="text-sm">
-          {suggestion.name ?? <span className="text-faint">Anonymous</span>}
+        <p className="font-medium">
+          {suggestion.name ?? <span className="text-muted font-normal">Anonymous</span>}
         </p>
-        <p className="text-faint text-xs">
+        <p className="text-muted flex items-center gap-2 text-sm">
           <time dateTime={suggestion.created_at}>
             {formatSubmitted(suggestion.created_at)}
           </time>
-          <span className="mx-2" aria-hidden="true">
-            ·
+          <span className={suggestion.status === "new" ? "tag tag-strong" : "tag"}>
+            {STATUS_LABELS[suggestion.status]}
           </span>
-          {STATUS_LABELS[suggestion.status]}
         </p>
       </div>
 
       <p
-        className={`mt-2 max-w-prose text-sm leading-relaxed break-words whitespace-pre-wrap ${
+        className={`mt-2 max-w-prose leading-relaxed break-words whitespace-pre-wrap ${
           settled ? "text-muted" : ""
         }`}
       >
         {suggestion.body}
       </p>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div
+        className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4"
+        style={{ borderColor: "var(--rule)" }}
+      >
+        <span className="label mr-1">Mark as</span>
         {SUGGESTION_STATUSES.map((status) => {
           const current = status === suggestion.status;
           return (
@@ -247,14 +995,7 @@ function SuggestionItem({ suggestion }: { suggestion: SuggestionRow }) {
                 type="submit"
                 disabled={current}
                 aria-pressed={current}
-                className={
-                  current
-                    ? "bg-ink text-cream border px-3 py-1 text-xs"
-                    : "text-muted cursor-pointer border px-3 py-1 text-xs transition-colors hover:text-ink"
-                }
-                style={{
-                  borderColor: current ? "var(--color-ink)" : "var(--rule-strong)",
-                }}
+                className="btn-quiet"
               >
                 {STATUS_LABELS[status]}
               </button>
@@ -264,10 +1005,7 @@ function SuggestionItem({ suggestion }: { suggestion: SuggestionRow }) {
 
         <form action={deleteSuggestion} className="ml-auto">
           <input type="hidden" name="suggestionId" value={suggestion.id} />
-          <button
-            type="submit"
-            className="text-faint cursor-pointer px-1 py-1 text-xs transition-colors hover:text-ink"
-          >
+          <button type="submit" className="btn-quiet">
             Delete
           </button>
         </form>
@@ -290,602 +1028,99 @@ function formatSubmitted(value: string): string {
   });
 }
 
-function PasscodeGate({ error }: { error: string | null }) {
-  return (
-    <main className="mx-auto max-w-md px-6 py-16 sm:py-24">
-      <Pawn className="mb-8 h-8 w-auto" />
-      <h1 className="text-3xl">Club tools</h1>
-      <p className="text-muted mt-3 text-sm leading-relaxed">
-        Officers run rounds and manage the roster. Arbiters report results in
-        the open round. Standings and results are open to everyone and need
-        nothing.
-      </p>
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
 
-      {error ? <ErrorNote>{error}</ErrorNote> : null}
-
-      <form action={unlockRole} className="mt-8">
-        <label className="label block" htmlFor="passcode">
-          Passcode
-        </label>
-        <input
-          id="passcode"
-          name="passcode"
-          type="password"
-          autoComplete="current-password"
-          required
-          className="mt-2 w-full border bg-transparent px-4 py-2.5 text-sm"
-          style={{ borderColor: "var(--rule-strong)" }}
-        />
-        <button
-          type="submit"
-          className="mt-4 w-full cursor-pointer border px-5 py-2.5 text-sm transition-colors hover:bg-ink hover:text-cream"
-          style={{ borderColor: "var(--color-ink)" }}
-        >
-          Unlock
-        </button>
-      </form>
-    </main>
-  );
-}
-
-function NewSeasonForm() {
-  return (
-    <section className="mt-10">
-      <p className="text-muted max-w-prose text-sm leading-relaxed">
-        No season is running. Start one to begin pairing rounds — a season is
-        one continuous Swiss event, so you only need a new one at the start of a
-        term or year.
-      </p>
-      <form
-        action={createSeason}
-        className="mt-6 flex flex-wrap items-center gap-3"
-      >
-        <label className="sr-only" htmlFor="season-name">
-          Season name
-        </label>
-        <input
-          id="season-name"
-          name="name"
-          required
-          placeholder="Spring 2026"
-          className="border bg-transparent px-4 py-2.5 text-sm"
-          style={{ borderColor: "var(--rule-strong)" }}
-        />
-        <SubmitButton>Start season</SubmitButton>
-      </form>
-    </section>
-  );
-}
-
-async function SeasonPanel({
-  seasonId,
-  seasonName,
-}: {
-  seasonId: string;
-  seasonName: string;
-}) {
-  const [roster, history] = await Promise.all([
-    getRoster(),
-    getSeasonHistory(seasonId),
-  ]);
-
-  const currentRound = history.rounds.at(-1) ?? null;
-  const matchups = currentRound ? await getRoundMatchups(currentRound.id) : [];
-  const active = roster.filter((p) => p.is_active);
-  const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
-
-  const outstanding = matchups.reduce(
-    (sum, view) =>
-      sum + view.games.filter((g) => g.result === "pending").length,
-    0,
-  );
-
-  // Hand-pairing 22 boards out of 44 names is unworkable if the list never
-  // shrinks, so offer only the players who do not yet have a game this round.
-  const seated = new Set<string>();
-  for (const { pairing } of matchups) {
-    seated.add(pairing.player_a_id);
-    if (pairing.player_b_id) seated.add(pairing.player_b_id);
-  }
-  const unpaired = active.filter((player) => !seated.has(player.id));
+async function SettingsPanel({ saved }: { saved: boolean }) {
+  const current = await getDefaultWording();
+  const placeholders = [
+    ...CLUB_INFO.meetings.map((m) => m.value),
+    ...CLUB_INFO.join,
+    CLUB_INFO.contact,
+  ].filter(isPlaceholder).length;
 
   return (
-    <>
-      <p className="text-muted mt-4 text-sm">
-        {seasonName} · {history.rounds.length}{" "}
-        {history.rounds.length === 1 ? "round" : "rounds"} so far
-      </p>
-
-      {!currentRound || currentRound.status === "completed" ? (
-        <>
-          <form
-            action={startRound}
-            className="mt-8 flex flex-wrap items-end gap-3"
-          >
-            <div>
-              <label className="label block" htmlFor="played-on">
-                Date played
-              </label>
-              <input
-                id="played-on"
-                name="playedOn"
-                type="date"
-                className="mt-2 border bg-transparent px-3 py-2 text-sm"
-                style={{ borderColor: "var(--rule-strong)" }}
-              />
-            </div>
-            <label className="flex items-center gap-2 pb-2.5 text-sm">
-              <input
-                type="checkbox"
-                name="tracksColors"
-                defaultChecked
-                className="size-4 accent-[var(--color-ink)]"
-              />
-              <span className="text-muted">Record who had White</span>
-            </label>
-            <SubmitButton>
-              Start round {(currentRound?.round_number ?? 0) + 1}
-            </SubmitButton>
-          </form>
-          <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
-            Untick the colours box for a round being entered from paper, where
-            nobody recorded who had White. It can be changed while the round is
-            still open.
-          </p>
-        </>
-      ) : null}
-
-      {currentRound ? (
-        <Section
-          title={`Round ${currentRound.round_number} · matchups`}
-          note={`${active.length} active players`}
-        >
-          {matchups.length === 0 ? (
-            <>
-              <Note>
-                Every active player is paired into a matchup of three games.
-                With an odd number one bye is given automatically.
-              </Note>
-              <form action={generatePairings} className="mt-5">
-                <input type="hidden" name="roundId" value={currentRound.id} />
-                <SubmitButton>Generate matchups</SubmitButton>
-              </form>
-            </>
-          ) : (
-            <MatchupList
-              matchups={matchups}
-              nameById={nameById}
-              roundId={currentRound.id}
-              roundStatus={currentRound.status}
-              outstanding={outstanding}
-            />
-          )}
-
-          {currentRound.status !== "completed" ? (
-            <ManualMatchupForm
-              roundId={currentRound.id}
-              players={unpaired}
-              totalActive={active.length}
-            />
-          ) : null}
-        </Section>
-      ) : null}
-
-      {history.rounds.length > 0 ? (
-        <RoundHistory rounds={history.rounds} />
-      ) : null}
-    </>
-  );
-}
-
-/**
- * Every round of the season, newest first, as a way back into the ones already
- * closed. Correcting a finished round asks for the passcode again on the way in.
- */
-function RoundHistory({ rounds }: { rounds: RoundRow[] }) {
-  const ordered = [...rounds].sort((a, b) => b.round_number - a.round_number);
-
-  return (
-    <Section title="All rounds" note={`${rounds.length} this season`}>
-      <ul className="mt-4">
-        {ordered.map((round) => (
-          <li
-            key={round.id}
-            className="border-b"
-            style={{ borderColor: "var(--rule)" }}
-          >
-            <Link
-              href={`/officer/round/${round.id}`}
-              className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 text-sm transition-colors hover:bg-cream-deep"
-            >
-              <span className="w-20">Round {round.round_number}</span>
-              <span className="text-muted flex-1">{round.played_on}</span>
-              {!round.tracks_colors ? (
-                <span className="text-faint text-xs">no colours</span>
-              ) : null}
-              <span className="text-faint w-24 text-right text-xs">
-                {round.status.replace("_", " ")}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </Section>
-  );
-}
-
-function MatchupList({
-  matchups,
-  nameById,
-  roundId,
-  roundStatus,
-  outstanding,
-}: {
-  matchups: MatchupView[];
-  nameById: ReadonlyMap<string, string>;
-  roundId: string;
-  roundStatus: string;
-  outstanding: number;
-}) {
-  const rematches = matchups.filter((v) => v.pairing.is_rematch).length;
-
-  return (
-    <>
-      {rematches > 0 ? (
-        <Note>
-          {rematches === 1
-            ? "One matchup repeats"
-            : `${rematches} matchups repeat`}{" "}
-          an earlier meeting. That only happens when no other pairing of this
-          round was possible.
-        </Note>
-      ) : null}
-
-      <ul className="mt-5">
-        {matchups.map((view) => {
-          const isBye = view.pairing.player_b_id === null;
-          const left = view.games.filter((g) => g.result === "pending").length;
-
-          return (
-            <li
-              key={view.pairing.id}
-              className="flex items-center gap-3 border-b"
-              style={{ borderColor: "var(--rule)" }}
-            >
-              <Link
-                href={`/matchup/${view.pairing.id}`}
-                className="grid min-w-0 flex-1 grid-cols-[1.5rem_1fr_auto] items-center gap-x-4 gap-y-1 py-3 text-sm transition-colors hover:bg-cream-deep sm:grid-cols-[1.5rem_1fr_auto_5rem]"
-              >
-                <span
-                  className="text-faint row-span-2 self-start pt-0.5 sm:row-span-1 sm:self-center sm:pt-0"
-                  data-numeric
-                >
-                  {view.pairing.board_number}
-                </span>
-                <span className="col-start-2 row-start-1 min-w-0">
-                  {nameById.get(view.pairing.player_a_id)}
-                  {isBye ? (
-                    <span className="text-faint"> — bye</span>
-                  ) : (
-                    <>
-                      <span className="text-faint mx-2">v</span>
-                      {nameById.get(view.pairing.player_b_id!)}
-                    </>
-                  )}
-                  {view.pairing.is_rematch ? (
-                    <span className="text-faint ml-2 text-xs">repeat</span>
-                  ) : null}
-                </span>
-                <span className="col-start-3 row-start-1 tabular-nums whitespace-nowrap">
-                  {isBye ? (
-                    <span className="text-faint text-xs">—</span>
-                  ) : (
-                    formatMatchupScore(view)
-                  )}
-                </span>
-                <span className="text-faint col-start-2 row-start-2 text-xs sm:col-start-4 sm:row-start-1 sm:text-right">
-                  {isBye ? "" : left === 0 ? "complete" : `${left} to go`}
-                </span>
-              </Link>
-
-              {roundStatus !== "completed" ? (
-                <form action={deleteMatchup}>
-                  <input
-                    type="hidden"
-                    name="pairingId"
-                    value={view.pairing.id}
-                  />
-                  <button
-                    type="submit"
-                    aria-label={`Remove board ${view.pairing.board_number}`}
-                    className="text-faint cursor-pointer px-1 py-2 text-xs transition-colors hover:text-ink"
-                  >
-                    Remove
-                  </button>
-                </form>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-
-      <div className="mt-6 flex flex-wrap gap-3">
-        {roundStatus !== "completed" && outstanding === 0 ? (
-          <form action={completeRound}>
-            <input type="hidden" name="roundId" value={roundId} />
-            <SubmitButton>Close round</SubmitButton>
-          </form>
-        ) : null}
-
-        {roundStatus !== "completed" && outstanding > 0 ? (
-          <form action={completeRound}>
-            <input type="hidden" name="roundId" value={roundId} />
-            <input type="hidden" name="forfeitUnplayed" value="true" />
-            <SubmitButton>
-              Close round, forfeiting {outstanding}{" "}
-              {outstanding === 1 ? "game" : "games"}
-            </SubmitButton>
-          </form>
-        ) : null}
-
-        {roundStatus !== "completed" ? (
-          <form action={clearPairings}>
-            <input type="hidden" name="roundId" value={roundId} />
-            <button
-              type="submit"
-              className="text-faint cursor-pointer border px-4 py-2 text-sm transition-colors hover:text-ink"
-              style={{ borderColor: "var(--rule-strong)" }}
-            >
-              Clear and re-pair
-            </button>
-          </form>
-        ) : null}
-
-        {outstanding > 0 ? (
-          <p className="text-faint self-center text-sm">
-            {outstanding} {outstanding === 1 ? "game" : "games"} still to report
-          </p>
-        ) : null}
-      </div>
-    </>
-  );
-}
-
-/**
- * Add a matchup by hand.
- *
- * How a club catches up: meetings played before the site existed go in round by
- * round, then each matchup's games are filled in from its own page.
- */
-function ManualMatchupForm({
-  roundId,
-  players,
-  totalActive,
-}: {
-  roundId: string;
-  /** Only those without a game in this round — the list shrinks as you pair. */
-  players: PlayerRow[];
-  totalActive: number;
-}) {
-  return (
-    <div className="mt-10 border-t pt-6" style={{ borderColor: "var(--rule)" }}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="label">Add a matchup by hand</h3>
-        <span className="text-faint text-xs">
-          {players.length === 0
-            ? `all ${totalActive} paired`
-            : `${players.length} of ${totalActive} still unpaired`}
-        </span>
-      </div>
-      <p className="text-faint mt-2 max-w-prose text-xs leading-relaxed">
-        Officers choose the two players themselves, instead of letting the
-        engine pair the round. Only players without a game this round are
-        listed, so the choices shrink as you go. Add the matchup, then open it
-        to enter its three games.
-      </p>
-
-      {players.length === 0 ? (
-        <p className="text-muted mt-4 text-sm">
-          Everyone active has a game this round. Remove a matchup above to pair
-          someone differently.
+    <div className="space-y-10">
+      <section>
+        <SectionHeading>Wording for visitors</SectionHeading>
+        <p className="text-muted mt-2 max-w-prose leading-relaxed">
+          Choose what someone sees the first time they visit. Anyone can still
+          switch for themselves with the &ldquo;Show&rdquo; buttons on the
+          standings, results and player pages.
         </p>
-      ) : (
-        <>
-          <form
-            action={addManualMatchup}
-            className="mt-4 flex flex-wrap items-end gap-3"
+
+        {saved ? (
+          <p
+            role="status"
+            className="mt-4 flex items-center gap-2 rounded-lg border-2 px-4 py-3"
+            style={{ borderColor: "var(--color-ink)" }}
           >
-            <input type="hidden" name="roundId" value={roundId} />
-
-            <SelectField label="Player" name="playerAId" id="player-a" required>
-              {players.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.full_name}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField label="Opponent" name="playerBId" id="player-b">
-              <option value="bye">No opponent (bye)</option>
-              {players.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.full_name}
-                </option>
-              ))}
-            </SelectField>
-
-            <SubmitButton>Add matchup</SubmitButton>
-          </form>
-
-          <p className="text-faint mt-4 max-w-prose text-xs leading-relaxed">
-            Still to pair: {players.map((p) => p.full_name).join(", ")}.
+            <CheckIcon className="size-5" />
+            Saved. New visitors will see this from now on.
           </p>
-        </>
-      )}
-    </div>
-  );
-}
+        ) : null}
 
-function SelectField({
-  label,
-  name,
-  id,
-  required,
-  children,
-}: {
-  label: string;
-  name: string;
-  id: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="label block" htmlFor={id}>
-        {label}
-      </label>
-      <select
-        id={id}
-        name={name}
-        required={required}
-        defaultValue=""
-        className="mt-2 border bg-transparent px-3 py-2 text-sm"
-        style={{ borderColor: "var(--rule-strong)" }}
-      >
-        <option value="" disabled>
-          Choose
-        </option>
-        {children}
-      </select>
-    </div>
-  );
-}
-
-async function RosterSection() {
-  const roster = await getRoster();
-  const active = roster.filter((p) => p.is_active).length;
-
-  return (
-    <Section title="Roster" note={`${active} active`}>
-      <form
-        action={addPlayer}
-        className="mt-4 flex flex-wrap items-center gap-3"
-      >
-        <label className="sr-only" htmlFor="player-name">
-          Player name
-        </label>
-        <input
-          id="player-name"
-          name="fullName"
-          required
-          placeholder="Add a player by name"
-          className="border bg-transparent px-4 py-2.5 text-sm"
-          style={{ borderColor: "var(--rule-strong)" }}
-        />
-        <SubmitButton>Add</SubmitButton>
-      </form>
-
-      {roster.length > 0 ? (
-        <ul className="mt-6 grid gap-x-8 gap-y-1 sm:grid-cols-2">
-          {roster.map((player) => (
-            <li
-              key={player.id}
-              className="flex items-center justify-between border-b py-2"
-              style={{ borderColor: "var(--rule)" }}
-            >
-              <span
-                className={player.is_active ? "text-sm" : "text-faint text-sm"}
+        <form action={setDefaultWording} className="mt-5">
+          <fieldset className="grid gap-3 sm:grid-cols-2">
+            <legend className="sr-only">Default wording</legend>
+            {[
+              {
+                value: "plain",
+                title: "Everyday words",
+                example: "Points · Opponents' strength · Free round · Maria won",
+              },
+              {
+                value: "chess",
+                title: "Chess terms",
+                example: "Score · Buchholz · Bye · 1–0",
+              },
+            ].map((option) => (
+              <label
+                key={option.value}
+                className="card-link flex cursor-pointer gap-3 p-4 has-[:checked]:border-2 has-[:checked]:border-[var(--color-ink)]"
               >
-                {player.full_name}
-                {player.grade ? (
-                  <span className="text-faint ml-2 text-xs">
-                    {player.grade}
-                  </span>
-                ) : null}
-                {!player.is_active ? (
-                  <span className="text-faint ml-2 text-xs">retired</span>
-                ) : null}
-              </span>
-              <form action={setPlayerActive}>
-                <input type="hidden" name="playerId" value={player.id} />
                 <input
-                  type="hidden"
-                  name="active"
-                  value={player.is_active ? "false" : "true"}
+                  type="radio"
+                  name="wording"
+                  value={option.value}
+                  defaultChecked={current === option.value}
+                  className="mt-1 size-5 accent-[var(--color-ink)]"
                 />
-                <button
-                  type="submit"
-                  className="text-faint cursor-pointer px-1 py-2 text-xs transition-colors hover:text-ink"
-                >
-                  {player.is_active ? "Retire" : "Reinstate"}
-                </button>
-              </form>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+                <span>
+                  <span className="block font-medium">{option.title}</span>
+                  <span className="text-muted mt-0.5 block text-sm">{option.example}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <button type="submit" className="btn-primary mt-4">
+            Save
+          </button>
+        </form>
+      </section>
 
-      <p className="text-faint mt-4 max-w-prose text-xs leading-relaxed">
-        Retiring a player hides them from future rounds but keeps their games,
-        because those games are part of other players&rsquo; tiebreaks. Names
-        appear on the public standings page, so use whatever form the club is
-        comfortable publishing.
-      </p>
-    </Section>
-  );
-}
-
-function Section({
-  title,
-  note,
-  children,
-}: {
-  title: string;
-  note?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="mt-14">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-xl">{title}</h2>
-        {note ? <span className="text-faint text-xs">{note}</span> : null}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Note({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-4 flex items-start gap-3">
-      <Pawn className="text-faint mt-0.5 h-4 w-auto shrink-0" />
-      <p className="text-muted max-w-prose text-sm leading-relaxed">
-        {children}
-      </p>
+      <section>
+        <SectionHeading>Club details</SectionHeading>
+        <p className="text-muted mt-2 max-w-prose leading-relaxed">
+          Meeting times, how to join and who to contact are shown on the{" "}
+          <Link href="/about" className="link">
+            About page
+          </Link>
+          . They are kept in the file{" "}
+          <code className="rounded bg-cream-deep px-1.5 py-0.5 text-sm">src/lib/club/info.ts</code>{" "}
+          and changed with the rest of the site&rsquo;s code.
+        </p>
+        <p className="mt-3">
+          {placeholders === 0 ? (
+            <span className="tag">All filled in</span>
+          ) : (
+            <span className="tag tag-strong">
+              {placeholders} {placeholders === 1 ? "detail" : "details"} still to fill in
+            </span>
+          )}
+        </p>
+      </section>
     </div>
-  );
-}
-
-function ErrorNote({ children }: { children: React.ReactNode }) {
-  return (
-    <p
-      role="alert"
-      className="mt-6 border-l-2 py-1 pl-4 text-sm"
-      style={{ borderColor: "var(--color-ink)" }}
-    >
-      {children}
-    </p>
-  );
-}
-
-function SubmitButton({ children }: { children: React.ReactNode }) {
-  return (
-    <button
-      type="submit"
-      className="cursor-pointer border px-5 py-2.5 text-sm transition-colors hover:bg-ink hover:text-cream"
-      style={{ borderColor: "var(--color-ink)" }}
-    >
-      {children}
-    </button>
   );
 }

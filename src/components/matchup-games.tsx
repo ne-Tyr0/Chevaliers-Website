@@ -1,33 +1,23 @@
 import { recordGame, setGameColor } from "@/lib/club/actions";
 import type { MatchupView } from "@/lib/club/queries";
 import { matchupScore } from "@/lib/club/queries";
-
-export const PLAYED_RESULTS = [
-  { value: "a_win", label: "1–0" },
-  { value: "draw", label: "½–½" },
-  { value: "b_win", label: "0–1" },
-] as const;
-
-export const FORFEIT_RESULTS = [
-  { value: "a_forfeit_win", label: "+ −" },
-  { value: "b_forfeit_win", label: "− +" },
-  { value: "double_forfeit", label: "− −" },
-] as const;
+import type { DbPairingResult } from "@/lib/supabase/database.types";
+import { CHESS_RESULT, formatPoints, shortName, type Terms } from "@/lib/terms";
+import { CheckIcon } from "./icons";
 
 /** "2 – 1", or "1½ – 1½". */
 export function formatMatchupScore(view: MatchupView): string {
   const { a, b } = matchupScore(view);
-  return `${half(a)} – ${half(b)}`;
-}
-
-function half(value: number): string {
-  const whole = Math.floor(value);
-  if (value - whole === 0.5) return whole === 0 ? "½" : `${whole}½`;
-  return String(value);
+  return `${formatPoints(a)} – ${formatPoints(b)}`;
 }
 
 /**
  * The three games of a matchup, with the controls to report them.
+ *
+ * Each game is its own card, asking its questions in the order they are
+ * settled at the board: who had White, then how it ended. Results are named
+ * in words — "Juliana won" — unless chess terms are on, so an arbiter who has
+ * never met "1–0" cannot record it the wrong way round.
  *
  * Colours are recorded per game rather than assigned by the pairing engine,
  * because they are settled at the board. Whoever is entering the result says
@@ -38,6 +28,7 @@ export function MatchupGames({
   nameA,
   nameB,
   returnTo,
+  terms,
   tracksColors = true,
   readOnly = false,
 }: {
@@ -45,6 +36,7 @@ export function MatchupGames({
   nameA: string;
   nameB: string;
   returnTo: string;
+  terms: Terms;
   /** False for a round entered from paper, where nobody noted who had White. */
   tracksColors?: boolean;
   /** True for a closed round with no review window open. */
@@ -52,103 +44,138 @@ export function MatchupGames({
 }) {
   if (view.pairing.player_b_id === null) {
     return (
-      <p className="text-muted mt-6 text-sm">
-        {nameA} has the bye this round, worth a full matchup. There is nothing to
-        report.
+      <p className="card text-muted mt-6 p-5">
+        {nameA} has a {terms.bye} this round, worth a whole {terms.match}. There
+        is nothing to report.
       </p>
     );
   }
 
+  const a = shortName(nameA);
+  const b = shortName(nameB);
+
+  const played: { value: DbPairingResult; label: string }[] = terms.chess
+    ? [
+        { value: "a_win", label: CHESS_RESULT.a_win },
+        { value: "draw", label: CHESS_RESULT.draw },
+        { value: "b_win", label: CHESS_RESULT.b_win },
+      ]
+    : [
+        { value: "a_win", label: `${a} won` },
+        { value: "draw", label: "Draw" },
+        { value: "b_win", label: `${b} won` },
+      ];
+  const unplayed: { value: DbPairingResult; label: string }[] = terms.chess
+    ? [
+        { value: "a_forfeit_win", label: CHESS_RESULT.a_forfeit_win },
+        { value: "b_forfeit_win", label: CHESS_RESULT.b_forfeit_win },
+        { value: "double_forfeit", label: CHESS_RESULT.double_forfeit },
+      ]
+    : [
+        { value: "a_forfeit_win", label: `${b} absent` },
+        { value: "b_forfeit_win", label: `${a} absent` },
+        { value: "double_forfeit", label: "Both absent" },
+      ];
+
   return (
-    <ul className="mt-6">
+    <ol className="mt-6 space-y-4">
       {view.games.map((game) => {
         const whiteIsA = game.color_a === "white";
         const whiteIsB = game.color_a === "black";
+        const done = game.result !== "pending";
 
         return (
-          <li
-            key={game.id}
-            className="border-b py-4"
-            style={{ borderColor: "var(--rule)" }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-              <span className="label">Game {game.game_number}</span>
-
-              <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
-                {tracksColors ? (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-faint text-xs">White</span>
-                    {readOnly ? (
-                      <span className="text-muted text-xs">
-                        {whiteIsA ? nameA : whiteIsB ? nameB : "not recorded"}
-                      </span>
-                    ) : (
-                      <>
-                        <ColorButton
-                          gameId={game.id}
-                          colorA="white"
-                          label={nameA}
-                          selected={whiteIsA}
-                          returnTo={returnTo}
-                        />
-                        <ColorButton
-                          gameId={game.id}
-                          colorA="black"
-                          label={nameB}
-                          selected={whiteIsB}
-                          returnTo={returnTo}
-                        />
-                      </>
-                    )}
-                  </div>
-                ) : null}
-
-                {readOnly ? (
-                  <span className="text-sm tabular-nums">
-                    {[...PLAYED_RESULTS, ...FORFEIT_RESULTS].find(
-                      (o) => o.value === game.result,
-                    )?.label ?? "not reported"}
-                  </span>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {PLAYED_RESULTS.map((option) => (
-                      <ResultButton
-                        key={option.value}
-                        gameId={game.id}
-                        value={option.value}
-                        label={option.label}
-                        selected={game.result === option.value}
-                        returnTo={returnTo}
-                      />
-                    ))}
-                    <span aria-hidden className="text-faint px-0.5 text-xs">
-                      |
-                    </span>
-                    {FORFEIT_RESULTS.map((option) => (
-                      <ResultButton
-                        key={option.value}
-                        gameId={game.id}
-                        value={option.value}
-                        label={option.label}
-                        selected={game.result === option.value}
-                        returnTo={returnTo}
-                        muted
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+          <li key={game.id} className="card p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-xl">Game {game.game_number}</h2>
+              {done ? (
+                <span className="tag tag-strong">
+                  <CheckIcon className="size-3.5" />
+                  {terms.gameResult(game.result, a, b)}
+                </span>
+              ) : (
+                <span className="tag">Not entered yet</span>
+              )}
             </div>
 
-            {game.updated_by && game.result !== "pending" ? (
-              <p className="text-faint mt-2 text-xs">
+            {tracksColors ? (
+              <fieldset className="mt-4">
+                <legend className="label">Who had White?</legend>
+                {readOnly ? (
+                  <p className="mt-1">
+                    {whiteIsA ? nameA : whiteIsB ? nameB : "Not recorded"}
+                  </p>
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <ColorButton
+                      gameId={game.id}
+                      colorA="white"
+                      label={a}
+                      selected={whiteIsA}
+                      returnTo={returnTo}
+                    />
+                    <ColorButton
+                      gameId={game.id}
+                      colorA="black"
+                      label={b}
+                      selected={whiteIsB}
+                      returnTo={returnTo}
+                    />
+                  </div>
+                )}
+              </fieldset>
+            ) : null}
+
+            {readOnly ? null : (
+              <>
+                <fieldset className="mt-4">
+                  <legend className="label">How did it end?</legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {played.map((option) => (
+                      <ResultButton
+                        key={option.value}
+                        gameId={game.id}
+                        value={option.value}
+                        label={option.label}
+                        hint={terms.gameResult(option.value, a, b)}
+                        selected={game.result === option.value}
+                        returnTo={returnTo}
+                      />
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset className="mt-3">
+                  <legend className="label">
+                    {terms.chess ? "Forfeits" : "Not played?"}
+                  </legend>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {unplayed.map((option) => (
+                      <ResultButton
+                        key={option.value}
+                        gameId={game.id}
+                        value={option.value}
+                        label={option.label}
+                        hint={terms.gameResult(option.value, a, b)}
+                        selected={game.result === option.value}
+                        returnTo={returnTo}
+                        quiet
+                      />
+                    ))}
+                  </div>
+                </fieldset>
+              </>
+            )}
+
+            {game.updated_by && done ? (
+              <p className="text-muted mt-4 text-sm">
                 Entered by {game.updated_by}
+                {readOnly ? "" : ". Press the chosen result again to clear it."}
               </p>
             ) : null}
           </li>
         );
       })}
-    </ul>
+    </ol>
   );
 }
 
@@ -174,18 +201,10 @@ function ColorButton({
       <button
         type="submit"
         aria-pressed={selected}
-        className="max-w-[7rem] cursor-pointer truncate border px-3 py-2 text-xs transition-colors hover:bg-ink hover:text-cream sm:max-w-[9rem] sm:px-2 sm:py-1"
-        style={
-          selected
-            ? {
-                borderColor: "var(--color-ink)",
-                backgroundColor: "var(--color-ink)",
-                color: "var(--color-cream)",
-              }
-            : { borderColor: "var(--rule-strong)" }
-        }
+        className="btn btn-sm max-w-[14rem]"
       >
-        {label}
+        {selected ? <CheckIcon className="size-4 shrink-0" /> : null}
+        <span className="truncate">{label}</span>
       </button>
     </form>
   );
@@ -195,16 +214,19 @@ function ResultButton({
   gameId,
   value,
   label,
+  hint,
   selected,
   returnTo,
-  muted,
+  quiet,
 }: {
   gameId: string;
   value: string;
   label: string;
+  /** Spelled out for screen readers and hover, since chess labels are symbols. */
+  hint: string;
   selected: boolean;
   returnTo: string;
-  muted?: boolean;
+  quiet?: boolean;
 }) {
   return (
     <form action={recordGame}>
@@ -215,20 +237,12 @@ function ResultButton({
       <button
         type="submit"
         aria-pressed={selected}
-        className={`min-w-11 cursor-pointer border px-3 py-2 text-xs transition-colors hover:bg-ink hover:text-cream sm:min-w-0 sm:px-2 sm:py-1 ${
-          muted && !selected ? "text-faint" : ""
-        }`}
-        style={
-          selected
-            ? {
-                borderColor: "var(--color-ink)",
-                backgroundColor: "var(--color-ink)",
-                color: "var(--color-cream)",
-              }
-            : { borderColor: "var(--rule-strong)" }
-        }
+        aria-label={hint === label ? undefined : `${label}: ${hint}`}
+        title={hint === label ? undefined : hint}
+        className={`${quiet ? "btn-quiet" : "btn btn-sm"} min-w-12 max-w-[14rem]`}
       >
-        {label}
+        {selected ? <CheckIcon className="size-4 shrink-0" /> : null}
+        <span className="truncate">{label}</span>
       </button>
     </form>
   );
