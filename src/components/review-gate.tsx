@@ -1,4 +1,5 @@
 import { closeReview, openReview } from "@/lib/club/actions";
+import { LockIcon } from "./icons";
 import { ReviewCountdown } from "./review-countdown";
 
 /**
@@ -17,23 +18,20 @@ export function ReviewGate({
   roundNumber: number;
 }) {
   return (
-    <div
-      className="mt-6 border-l-2 pl-4"
-      style={{ borderColor: "var(--rule-strong)" }}
-    >
-      <h2 className="label">Round {roundNumber} is closed</h2>
-      <p className="text-muted mt-2 max-w-prose text-sm leading-relaxed">
-        You can read it as it stands. To correct anything, enter the officer
-        passcode again — changing a finished round moves every score and tiebreak
-        that follows it, so it is worth being sure.
+    <div className="card mt-6 p-5">
+      <h2 className="flex items-center gap-2 text-lg">
+        <LockIcon className="size-5" />
+        Round {roundNumber} is finished
+      </h2>
+      <p className="text-muted mt-2 max-w-prose leading-relaxed">
+        You can look at it as it stands. To correct a result, enter the officer
+        passcode again. Changing a finished round can move everyone&rsquo;s
+        place in the standings, so it is worth being sure.
       </p>
 
-      <form
-        action={openReview}
-        className="mt-4 flex flex-wrap items-end gap-3"
-      >
+      <form action={openReview} className="mt-4 flex flex-wrap items-end gap-3">
         <input type="hidden" name="returnTo" value={returnTo} />
-        <div>
+        <div className="min-w-0 flex-1 sm:max-w-xs">
           <label className="label block" htmlFor="review-passcode">
             Officer passcode
           </label>
@@ -43,16 +41,11 @@ export function ReviewGate({
             type="password"
             autoComplete="current-password"
             required
-            className="mt-2 border bg-transparent px-4 py-2.5 text-sm"
-            style={{ borderColor: "var(--rule-strong)" }}
+            className="field mt-1.5"
           />
         </div>
-        <button
-          type="submit"
-          className="cursor-pointer border px-5 py-2.5 text-sm transition-colors hover:bg-ink hover:text-cream"
-          style={{ borderColor: "var(--color-ink)" }}
-        >
-          Unlock for editing
+        <button type="submit" className="btn-primary">
+          Unlock to correct
         </button>
       </form>
     </div>
@@ -69,19 +62,17 @@ export function ReviewBanner({
 }) {
   return (
     <div
-      className="mt-6 flex flex-wrap items-center justify-between gap-3 border-l-2 pl-4"
+      className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 px-5 py-4"
       style={{ borderColor: "var(--color-ink)" }}
     >
-      <p className="text-sm">
-        Closed rounds are unlocked for editing.{" "}
+      <p>
+        <strong className="font-semibold">Finished rounds are unlocked.</strong>{" "}
         <ReviewCountdown expiresAt={expiresAt} />
       </p>
       <form action={closeReview}>
         <input type="hidden" name="returnTo" value={returnTo} />
-        <button
-          type="submit"
-          className="text-faint cursor-pointer text-xs transition-colors hover:text-ink"
-        >
+        <button type="submit" className="btn btn-sm">
+          <LockIcon className="size-4" />
           Lock again now
         </button>
       </form>

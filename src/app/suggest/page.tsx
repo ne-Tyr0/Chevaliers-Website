@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
+import { ErrorNote, PageHeader } from "@/components/ui";
 import { submitSuggestion } from "@/lib/club/actions";
 import {
   SUGGESTION_MAX_LENGTH,
@@ -27,9 +28,11 @@ export default async function SuggestPage({
     <>
       <SiteHeader role={role} currentPath="/suggest" />
 
-      <main className="mx-auto w-full max-w-xl px-6 py-10 sm:py-16">
-        <p className="label">Suggestions</p>
-        <h1 className="mt-3 text-3xl sm:text-4xl">Suggest a feature</h1>
+      <main className="mx-auto w-full max-w-xl px-4 py-8 sm:px-6 sm:py-14">
+        <PageHeader
+          crumbs={[{ href: "/about", label: "About the club" }]}
+          title="Suggest a feature"
+        />
 
         {sent ? <Sent /> : <SuggestionForm error={error} />}
       </main>
@@ -39,27 +42,20 @@ export default async function SuggestPage({
 
 function Sent() {
   return (
-    <section className="mt-8">
+    <section className="card mt-8 p-5 sm:p-6">
       <div className="flex items-start gap-3">
-        <Pawn className="text-faint mt-0.5 h-4 w-auto shrink-0" />
-        <p className="text-muted max-w-prose text-sm leading-relaxed">
+        <Pawn className="mt-0.5 h-6 w-auto shrink-0" />
+        <p className="max-w-prose leading-relaxed">
           Thank you. Your suggestion went straight to the club officers, who
           read every one. It is not posted anywhere public.
         </p>
       </div>
       <div className="mt-8 flex flex-wrap gap-3 text-sm">
-        <Link
-          href="/suggest"
-          className="border px-5 py-2.5 transition-colors hover:bg-ink hover:text-cream"
-          style={{ borderColor: "var(--color-ink)" }}
-        >
+        <Link href="/suggest" className="btn">
           Suggest something else
         </Link>
-        <Link
-          href="/standings"
-          className="text-muted px-2 py-2.5 transition-colors hover:text-ink"
-        >
-          Back to the standings
+        <Link href="/" className="link inline-flex min-h-11 items-center px-2">
+          Back to the home page
         </Link>
       </div>
     </section>
@@ -69,22 +65,14 @@ function Sent() {
 function SuggestionForm({ error }: { error: string | null }) {
   return (
     <>
-      <p className="text-muted mt-3 max-w-prose text-sm leading-relaxed">
+      <p className="text-muted mt-3 max-w-prose leading-relaxed">
         Something you wish this site did, a page that would help, or anything
         that gets in the way. Your suggestion goes only to the club officers.
       </p>
 
-      {error ? (
-        <p
-          role="alert"
-          className="mt-6 border-l-2 py-1 pl-4 text-sm"
-          style={{ borderColor: "var(--color-ink)" }}
-        >
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-      <form action={submitSuggestion} className="mt-8">
+      <form action={submitSuggestion} className="card mt-8 p-5 sm:p-6">
         <label className="label block" htmlFor="suggestion-body">
           Your suggestion
         </label>
@@ -95,22 +83,20 @@ function SuggestionForm({ error }: { error: string | null }) {
           rows={6}
           maxLength={SUGGESTION_MAX_LENGTH}
           placeholder="It would help if the standings page…"
-          className="mt-2 block w-full resize-y border bg-transparent px-4 py-3 text-sm leading-relaxed"
-          style={{ borderColor: "var(--rule-strong)" }}
+          className="field mt-1.5 resize-y py-3 leading-relaxed"
         />
 
         <label className="label mt-6 block" htmlFor="suggestion-name">
-          Your name <span className="normal-case tracking-normal">(optional)</span>
+          Your name <span className="font-normal">(optional)</span>
         </label>
         <input
           id="suggestion-name"
           name="name"
           autoComplete="name"
           maxLength={SUGGESTION_NAME_MAX_LENGTH}
-          className="mt-2 w-full border bg-transparent px-4 py-2.5 text-sm"
-          style={{ borderColor: "var(--rule-strong)" }}
+          className="field mt-1.5"
         />
-        <p className="text-faint mt-2 text-xs leading-relaxed">
+        <p className="text-muted mt-2 text-sm leading-relaxed">
           Leave it blank to stay anonymous. A name lets an officer follow up
           with you.
         </p>
@@ -128,11 +114,7 @@ function SuggestionForm({ error }: { error: string | null }) {
           />
         </div>
 
-        <button
-          type="submit"
-          className="mt-8 cursor-pointer border px-5 py-2.5 text-sm transition-colors hover:bg-ink hover:text-cream"
-          style={{ borderColor: "var(--color-ink)" }}
-        >
+        <button type="submit" className="btn-primary mt-6">
           Send suggestion
         </button>
       </form>

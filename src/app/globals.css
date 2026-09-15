@@ -6,11 +6,23 @@
  * Two colors carry the whole site: warm cream paper and near-black ink, taken
  * from the logo. Everything else is those two at different strengths, which is
  * what keeps the reading-room feel — no accent hues, no colored surfaces.
+ *
+ * Without a colour to mark what is clickable, shape has to do it. The rules
+ * every page follows:
+ *
+ *   - A link to another page is underlined text (`.link`), or a whole row or
+ *     card with a border and a chevron (`.row-link`, `.card-link`).
+ *   - An action is a button with a visible edge: solid ink for the one main
+ *     thing on a screen (`.btn-primary`), outlined for the rest (`.btn`).
+ *   - Nothing that is not clickable is underlined, boxed or given a chevron.
+ *     Status tags (`.tag`) are borderless pills so they never read as buttons.
  */
 @theme {
   --color-cream: #f0ece0;
   /* A half-step darker, for table stripes and inset panels. */
   --color-cream-deep: #e8e3d4;
+  /* A half-step lighter, for cards that sit on the page. */
+  --color-cream-light: #f7f4ec;
   --color-ink: #241e20;
 
   --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
@@ -21,11 +33,18 @@
   :root {
     color-scheme: light;
     /* Hairlines and muted text, expressed as ink at low strength so they always
-       sit correctly on the cream rather than being separate greys. */
+       sit correctly on the cream rather than being separate greys.
+
+       Both text strengths clear WCAG AA (4.5:1) on cream and on cream-deep.
+       They used to be 62% and 42%, which measured 4.4:1 and 2.5:1 — the faint
+       grey that carried most of the explanatory text was the hardest thing on
+       the site to read. */
     --rule: color-mix(in srgb, var(--color-ink) 14%, transparent);
-    --rule-strong: color-mix(in srgb, var(--color-ink) 28%, transparent);
-    --ink-muted: color-mix(in srgb, var(--color-ink) 62%, transparent);
-    --ink-faint: color-mix(in srgb, var(--color-ink) 42%, transparent);
+    --rule-strong: color-mix(in srgb, var(--color-ink) 32%, transparent);
+    --ink-muted: color-mix(in srgb, var(--color-ink) 80%, transparent);
+    --ink-faint: color-mix(in srgb, var(--color-ink) 68%, transparent);
+    /* Height of the phone tab bar, so the page can leave room for it. */
+    --tabbar-height: 4rem;
   }
 
   /* The page colour lives here rather than on <body> so the decorative pawns,
@@ -77,6 +96,11 @@
     outline: 2px solid var(--color-ink);
     outline-offset: 2px;
   }
+
+  /* Disclosure triangles are replaced by an explicit "Show" control. */
+  summary::-webkit-details-marker {
+    display: none;
+  }
 }
 
 @layer components {
@@ -92,12 +116,183 @@
     color: var(--ink-faint);
   }
 
-  /* Small caps label, used for column headers and section eyebrows. */
+  /* A small heading for a group of fields or a table column. Sentence case:
+     tracked-out capitals are slower to read and were used so widely they had
+     stopped meaning anything. */
   .label {
-    font-size: 0.6875rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    color: var(--ink-muted);
+  }
+
+  /* ---- Links ------------------------------------------------------------ */
+
+  /* Inline text that goes somewhere. Always underlined, never only on hover. */
+  .link {
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+    text-decoration-color: var(--rule-strong);
+    transition: text-decoration-color 150ms;
+  }
+  .link:hover {
+    text-decoration-color: var(--color-ink);
+    text-decoration-thickness: 2px;
+  }
+
+  /* A whole row that opens a page: tinted on hover, chevron on the right. */
+  .row-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3rem;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin-inline: -0.75rem;
+    transition: background-color 150ms;
+  }
+  .row-link:hover {
+    background-color: var(--color-cream-deep);
+  }
+
+  /* A card that is one big link. The border darkens so it reads as pressable. */
+  .card {
+    border: 1px solid var(--rule-strong);
+    border-radius: 0.75rem;
+    background-color: var(--color-cream-light);
+  }
+  .card-link {
+    display: block;
+    border: 1px solid var(--rule-strong);
+    border-radius: 0.75rem;
+    background-color: var(--color-cream-light);
+    transition:
+      border-color 150ms,
+      background-color 150ms;
+  }
+  .card-link:hover {
+    border-color: var(--color-ink);
+    background-color: var(--color-cream);
+  }
+
+  /* ---- Buttons ---------------------------------------------------------- */
+
+  .btn,
+  .btn-primary,
+  .btn-quiet {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1.125rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    text-align: center;
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      color 150ms,
+      border-color 150ms;
+  }
+
+  /* The one main action on a screen. */
+  .btn-primary {
+    border: 1.5px solid var(--color-ink);
+    background-color: var(--color-ink);
+    color: var(--color-cream);
+  }
+  .btn-primary:hover {
+    background-color: color-mix(in srgb, var(--color-ink) 86%, var(--color-cream));
+  }
+
+  /* Everything else a person can do. */
+  .btn {
+    border: 1.5px solid var(--color-ink);
+    background-color: var(--color-cream-light);
+    color: var(--color-ink);
+  }
+  .btn:hover {
+    background-color: var(--color-cream-deep);
+  }
+
+  /* Minor or undoable actions next to content: remove, retire, lock. Still
+     boxed, so it is plainly a button, but with a lighter edge. */
+  .btn-quiet {
+    min-height: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--rule-strong);
+    background-color: transparent;
+    color: var(--ink-muted);
+  }
+  .btn-quiet:hover {
+    border-color: var(--color-ink);
+    color: var(--color-ink);
+  }
+
+  .btn-sm {
+    min-height: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  /* A toggle button that is currently on. */
+  .btn[aria-pressed="true"],
+  .btn-quiet[aria-pressed="true"] {
+    border-color: var(--color-ink);
+    background-color: var(--color-ink);
+    color: var(--color-cream);
+  }
+
+  .btn:disabled,
+  .btn-primary:disabled {
+    cursor: default;
+  }
+
+  /* ---- Forms ------------------------------------------------------------ */
+
+  .field {
+    display: block;
+    width: 100%;
+    min-height: 2.75rem;
+    border: 1.5px solid var(--rule-strong);
+    border-radius: 0.5rem;
+    background-color: var(--color-cream-light);
+    padding: 0.5rem 0.875rem;
+    font-size: 0.9375rem;
+  }
+  .field:hover {
+    border-color: color-mix(in srgb, var(--color-ink) 55%, transparent);
+  }
+  .field:focus {
+    border-color: var(--color-ink);
+    outline: none;
+    box-shadow: 0 0 0 1px var(--color-ink);
+  }
+
+  /* ---- Status ----------------------------------------------------------- */
+
+  /* Not clickable: no border, rounder than any button. */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 999px;
+    background-color: var(--color-cream-deep);
+    padding: 0.125rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    color: var(--color-ink);
+    white-space: nowrap;
+  }
+  .tag-strong {
+    background-color: var(--color-ink);
+    color: var(--color-cream);
   }
 }
 

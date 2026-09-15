@@ -30,6 +30,7 @@ import {
   SUGGESTION_NAME_MAX_LENGTH,
   SUGGESTION_STATUSES,
 } from "./suggestions";
+import { parseWording, WORDING_COOKIE } from "@/lib/terms";
 
 /** Upper bound for the placeholder pairing number. Wide enough that ties are rare. */
 const PAIRING_NUMBER_RANGE = 1_000_000;
@@ -55,7 +56,13 @@ function safePath(value: FormDataEntryValue | null, fallback: string): string {
 }
 
 function backTo(path: string, error?: string): never {
-  redirect(error ? `${path}?error=${encodeURIComponent(error)}` : path);
+  const joiner = path.includes("?") ? "&" : "?";
+  redirect(error ? `${path}${joiner}error=${encodeURIComponent(error)}` : path);
+}
+
+/** The roster lives on its own officer tab, so its actions return there. */
+function backToRoster(error?: string): never {
+  backTo("/officer?tab=roster", error);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,15 +94,16 @@ export async function lockRole() {
 export async function addPlayer(formData: FormData) {
   await assertOfficer();
   const fullName = String(formData.get("fullName") ?? "").trim();
-  if (!fullName) backToOfficer("A player needs a name.");
+  if (!fullName) backToRoster("A player needs a name.");
 
   const supabase = createAdminClient();
   const { error } = await supabase.from("players").insert({ full_name: fullName });
-  if (error) backToOfficer(error.message);
+  if (error) backToRoster(error.message);
 
   revalidatePath("/officer");
   revalidatePath("/standings");
-  backToOfficer();
+  revalidatePath("/players", "layout");
+  backToRoster();
 }
 
 /**
@@ -108,17 +116,18 @@ export async function setPlayerActive(formData: FormData) {
   await assertOfficer();
   const playerId = String(formData.get("playerId") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
-  if (!playerId) backToOfficer("Missing player.");
+  if (!playerId) backToRoster("Missing player.");
 
   const supabase = createAdminClient();
   const { error } = await supabase
     .from("players")
     .update({ is_active: active })
     .eq("id", playerId);
-  if (error) backToOfficer(error.message);
+  if (error) backToRoster(error.message);
 
   revalidatePath("/officer");
-  backToOfficer();
+  revalidatePath("/players", "layout");
+  backToRoster();
 }
 
 export async function createSeason(formData: FormData) {
@@ -132,6 +141,7 @@ export async function createSeason(formData: FormData) {
 
   revalidatePath("/officer");
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   backToOfficer();
 }
 
@@ -303,6 +313,7 @@ export async function generatePairings(formData: FormData) {
   revalidatePath("/officer");
   revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   revalidatePath("/results");
   revalidatePath("/");
   backToOfficer();
@@ -366,6 +377,7 @@ export async function addManualMatchup(formData: FormData) {
   revalidatePath("/officer");
   revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   revalidatePath("/results");
   backToOfficer();
 }
@@ -382,6 +394,7 @@ export async function deleteMatchup(formData: FormData) {
 
   revalidatePath("/officer");
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   revalidatePath("/results");
   backToOfficer();
 }
@@ -400,6 +413,7 @@ export async function clearPairings(formData: FormData) {
   revalidatePath("/officer");
   revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   revalidatePath("/results");
   backToOfficer();
 }
@@ -457,6 +471,7 @@ export async function recordGame(formData: FormData) {
   revalidatePath("/officer");
   revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   revalidatePath("/results");
   revalidatePath("/");
   backTo(returnTo);
@@ -494,6 +509,7 @@ export async function setGameColor(formData: FormData) {
 
   revalidatePath(returnTo);
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   revalidatePath("/results");
   backTo(returnTo);
 }
@@ -589,6 +605,7 @@ export async function completeRound(formData: FormData) {
   revalidatePath("/officer");
   revalidatePath("/arbiter");
   revalidatePath("/standings");
+  revalidatePath("/players", "layout");
   revalidatePath("/results");
   revalidatePath("/");
   backToOfficer();
@@ -713,4 +730,57 @@ export async function deleteSuggestion(formData: FormData) {
 
   revalidatePath("/officer");
   backToSuggestionsTab();
+}
+
+// ---------------------------------------------------------------------------
+// Wording — anyone chooses their own, officers set the default
+// ---------------------------------------------------------------------------
+
+const WORDING_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+/**
+ * Switch this visitor between everyday words and chess terms.
+ *
+ * A cookie rather than a setting stored anywhere, because there are no
+ * accounts: the choice belongs to the browser that made it.
+ */
+export async function setWording(formData: FormData) {
+  const wording = parseWording(String(formData.get("wording") ?? ""));
+  const returnTo = safePath(formData.get("returnTo"), "/");
+  if (!wording) backTo(returnTo);
+
+  (await cookies()).set(WORDING_COOKIE, wording, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: WORDING_MAX_AGE_SECONDS,
+  });
+
+  revalidatePath("/", "layout");
+  backTo(returnTo);
+}
+
+/** Choose the wording a first-time visitor starts with. */
+export async function setDefaultWording(formData: FormData) {
+  await assertOfficer();
+  const wording = parseWording(String(formData.get("wording") ?? ""));
+  if (!wording) backTo("/officer?tab=settings", "Choose one of the two options.");
+
+  const { error } = await createAdminClient()
+    .from("site_settings")
+    .upsert({
+      id: true,
+      chess_terms_default: wording === "chess",
+      updated_at: new Date().toISOString(),
+    });
+  if (error) {
+    backTo(
+      "/officer?tab=settings",
+      `${error.message}. If this is a new install, run supabase/migrations/0009_site_settings.sql.`,
+    );
+  }
+
+  revalidatePath("/", "layout");
+  backTo("/officer?tab=settings&saved=1");
 }

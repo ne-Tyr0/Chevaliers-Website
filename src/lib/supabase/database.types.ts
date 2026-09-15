@@ -87,6 +87,14 @@ export type SuggestionRow = {
   created_at: string;
 };
 
+/** The single row of site-wide settings. */
+export type SiteSettingsRow = {
+  id: boolean;
+  /** Whether a first-time visitor sees chess terms rather than everyday words. */
+  chess_terms_default: boolean;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -227,6 +235,20 @@ export type Database = {
           name?: string | null;
           status?: SuggestionStatus;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      site_settings: {
+        Row: SiteSettingsRow;
+        Insert: {
+          id?: boolean;
+          chess_terms_default?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          id?: boolean;
+          chess_terms_default?: boolean;
+          updated_at?: string;
         };
         Relationships: [];
       };

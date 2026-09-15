@@ -1,143 +1,158 @@
-import type { GameRecord, StandingRow } from "@/lib/swiss";
-import { formatPoints, PlayerCard } from "./player-card";
-import { StatPopover } from "./stat-popover";
+import Link from "next/link";
+import type { StandingRow } from "@/lib/swiss";
+import { formatPoints, type Terms } from "@/lib/terms";
 
-export { formatPoints };
-
+/**
+ * The season table.
+ *
+ * Every name is a link to that player's page. Their detail used to live in a
+ * card that opened on hover, which a phone has no way to discover and which
+ * hid the only route to a player's games; a page can be found, shared and
+ * returned to.
+ *
+ * Narrow screens drop columns rather than side-scroll, and nothing dropped is
+ * lost: the player page carries the full record. The tiebreak columns appear
+ * only with chess terms on — in everyday wording they would be two unexplained
+ * numbers, and the player page explains them instead.
+ */
 export function StandingsTable({
   rows,
   nameById,
   gradeById,
-  gamesByPlayer,
+  terms,
   highlightId,
 }: {
   rows: readonly StandingRow[];
   nameById: ReadonlyMap<string, string>;
   /** Grade and section per player, as the club's pairing sheets identify them. */
   gradeById?: ReadonlyMap<string, string | null>;
-  /** Per-player history, used to fill the hover card. */
-  gamesByPlayer: ReadonlyMap<string, GameRecord[]>;
+  terms: Terms;
   /** A row to tint, so a reader can find themselves. */
   highlightId?: string;
 }) {
-  /*
-   * Narrow screens drop columns rather than side-scroll. A 36rem floor is
-   * wider than any phone, which turned the table into a nested scroller inside
-   * a page that also scrolled — awkward to read, and easy to miss that there
-   * was anything to the right. Everything hidden here is still one tap away in
-   * the player card, which carries the full record.
-   */
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+    <div className="card overflow-x-auto">
+      <table className="w-full border-collapse text-[0.9375rem]">
+        <caption className="sr-only">
+          Standings. Select a player&rsquo;s name to see their games.
+        </caption>
         <thead>
           <tr className="border-b" style={{ borderColor: "var(--rule-strong)" }}>
-            <Th className="pr-2 text-left sm:pr-3">#</Th>
-            <Th className="w-full pr-3 text-left sm:pr-6">Player</Th>
-            <Th className="pr-3 text-right sm:pr-6" numeric>
-              Score
+            <Th className="w-12 pl-4 text-left sm:pl-5">
+              <span aria-hidden>#</span>
+              <span className="sr-only">Place</span>
             </Th>
-            <Th className="pr-3 text-right sm:pr-6" numeric>
-              Played
+            <Th className="pr-3 text-left">Player</Th>
+            <Th className="pr-4 text-right" numeric>
+              {terms.points}
             </Th>
-            <Th className="hidden pr-6 text-right sm:table-cell" numeric>
-              W–D–L
+            <Th className="pr-4 text-right sm:pr-5" numeric>
+              {terms.gamesPlayed}
             </Th>
-            <Th
-              className="hidden pr-6 text-right md:table-cell"
-              numeric
-              title="Buchholz — sum of opponents' scores"
-            >
-              Buch.
+            <Th className="hidden pr-5 text-right md:table-cell" numeric>
+              {terms.record}
             </Th>
-            <Th
-              className="hidden text-right md:table-cell"
-              numeric
-              title="Sonneborn-Berger — defeated opponents' scores, plus half of each drawn opponent's"
-            >
-              S–B
-            </Th>
+            {terms.chess ? (
+              <>
+                <Th
+                  className="hidden pr-5 text-right lg:table-cell"
+                  numeric
+                  title={terms.buchholzHint}
+                >
+                  Buch.
+                </Th>
+                <Th
+                  className="hidden pr-5 text-right lg:table-cell"
+                  numeric
+                  title={terms.sonnebornBergerHint}
+                >
+                  S–B
+                </Th>
+              </>
+            ) : null}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.playerId}
-              className="border-b"
-              style={{
-                borderColor: "var(--rule)",
-                backgroundColor:
-                  row.playerId === highlightId
-                    ? "var(--color-cream-deep)"
-                    : undefined,
-              }}
-            >
-              <td className="text-faint py-3 pr-2 align-top sm:pr-3" data-numeric>
-                {row.rank}
-              </td>
-              <td className="py-3 pr-3 sm:pr-6">
-                <StatPopover
-                  label={nameById.get(row.playerId) ?? "Unknown player"}
+          {rows.map((row) => {
+            const name = nameById.get(row.playerId) ?? "Unknown player";
+            const grade = gradeById?.get(row.playerId);
+            const forfeits = row.forfeitWins + row.forfeitLosses;
+            const podium = row.rank <= 3;
+
+            return (
+              <tr
+                key={row.playerId}
+                className="border-b transition-colors last:border-b-0 hover:bg-cream-deep"
+                style={{
+                  borderColor: "var(--rule)",
+                  backgroundColor:
+                    row.playerId === highlightId
+                      ? "var(--color-cream-deep)"
+                      : undefined,
+                }}
+              >
+                <td
+                  className={`py-3 pl-4 align-top tabular-nums sm:pl-5 ${podium ? "font-semibold" : "text-muted"}`}
+                  data-numeric
                 >
-                  <PlayerCard
-                    name={nameById.get(row.playerId) ?? "Unknown player"}
-                    grade={gradeById?.get(row.playerId) ?? null}
-                    row={row}
-                    games={gamesByPlayer.get(row.playerId) ?? []}
-                    nameById={nameById}
-                  />
-                </StatPopover>
-                {gradeById?.get(row.playerId) ? (
-                  <span className="text-faint ml-2 text-xs">
-                    {gradeById.get(row.playerId)}
-                  </span>
-                ) : null}
-                {row.byes > 0 ? (
-                  <span className="text-faint ml-2 text-xs">
-                    {row.byes === 1 ? "bye" : `${row.byes} byes`}
-                  </span>
-                ) : null}
-                {row.forfeitWins + row.forfeitLosses > 0 ? (
-                  <span
-                    className="text-faint ml-2 text-xs"
-                    title="Games decided without play"
+                  {row.rank}
+                </td>
+                <td className="py-3 pr-3 align-top">
+                  <Link
+                    href={`/players/${row.playerId}`}
+                    className={`link ${podium ? "font-semibold" : ""}`}
                   >
-                    {row.forfeitWins + row.forfeitLosses} def.
-                  </span>
+                    {name}
+                  </Link>
+                  {grade || row.byes > 0 || forfeits > 0 ? (
+                    <span className="text-muted mt-0.5 block text-xs">
+                      {[
+                        grade,
+                        row.byes > 0 ? terms.byes(row.byes) : null,
+                        forfeits > 0 ? terms.forfeits(forfeits) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  ) : null}
+                </td>
+                <td
+                  className="py-3 pr-4 text-right align-top font-semibold whitespace-nowrap"
+                  data-numeric
+                >
+                  {formatPoints(row.score)}
+                </td>
+                <td
+                  className="text-muted py-3 pr-4 text-right align-top whitespace-nowrap sm:pr-5"
+                  data-numeric
+                >
+                  {row.gamesPlayed}
+                </td>
+                <td
+                  className="text-muted hidden py-3 pr-5 text-right align-top whitespace-nowrap md:table-cell"
+                  data-numeric
+                >
+                  {row.wins} · {row.draws} · {row.losses}
+                </td>
+                {terms.chess ? (
+                  <>
+                    <td
+                      className="text-muted hidden py-3 pr-5 text-right align-top whitespace-nowrap lg:table-cell"
+                      data-numeric
+                    >
+                      {formatPoints(row.buchholz)}
+                    </td>
+                    <td
+                      className="text-muted hidden py-3 pr-5 text-right align-top whitespace-nowrap lg:table-cell"
+                      data-numeric
+                    >
+                      {formatPoints(row.sonnebornBerger)}
+                    </td>
+                  </>
                 ) : null}
-              </td>
-              <td
-                className="py-3 pr-3 text-right align-top font-medium whitespace-nowrap sm:pr-6"
-                data-numeric
-              >
-                {formatPoints(row.score)}
-              </td>
-              <td
-                className="text-muted py-3 pr-3 text-right align-top whitespace-nowrap sm:pr-6"
-                data-numeric
-              >
-                {row.gamesPlayed}
-              </td>
-              <td
-                className="text-muted hidden py-3 pr-6 text-right align-top whitespace-nowrap sm:table-cell"
-                data-numeric
-              >
-                {row.wins}–{row.draws}–{row.losses}
-              </td>
-              <td
-                className="text-faint hidden py-3 pr-6 text-right align-top whitespace-nowrap md:table-cell"
-                data-numeric
-              >
-                {formatPoints(row.buchholz)}
-              </td>
-              <td
-                className="text-faint hidden py-3 text-right align-top whitespace-nowrap md:table-cell"
-                data-numeric
-              >
-                {formatPoints(row.sonnebornBerger)}
-              </td>
-            </tr>
-          ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -160,7 +175,7 @@ function Th({
       scope="col"
       title={title}
       data-numeric={numeric ? "" : undefined}
-      className={`label py-3 font-normal ${className}`}
+      className={`label py-3 font-medium ${className}`}
     >
       {children}
     </th>

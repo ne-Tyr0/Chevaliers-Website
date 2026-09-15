@@ -11,15 +11,17 @@ const BUILT_BY = "Will Tyrone Araneta";
 const SOURCE_URL = "https://github.com/ne-Tyr0/Chevaliers-Website";
 
 /** Footer links sit one step quieter than the header's, and warm on hover. */
-const LINK = "text-muted transition-colors hover:text-ink";
+const LINK =
+  "text-muted inline-flex min-h-9 items-center underline decoration-[var(--rule-strong)] underline-offset-4 transition-colors hover:text-ink hover:decoration-[var(--color-ink)]";
 
 /**
  * The site footer, rendered once in the root layout rather than per page.
  *
  * Deliberately not role-aware: unlike the header, nothing here changes for an
  * officer or an arbiter, so it stays a plain server component with no session
- * lookup. The "Officers" link is the same door everyone sees — it asks for a
- * passcode on the other side.
+ * lookup. The sign-in link is the same door everyone sees — it asks for a
+ * passcode on the other side. It lives here rather than in the main navigation
+ * because almost nobody who visits needs it.
  */
 export function SiteFooter() {
   return (
@@ -27,7 +29,7 @@ export function SiteFooter() {
       className="mt-auto shrink-0 border-t"
       style={{ borderColor: "var(--rule)" }}
     >
-      <div className="mx-auto max-w-5xl px-6 py-12">
+      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
         <div className="flex flex-col gap-10 sm:flex-row sm:justify-between">
           <div className="max-w-xs">
             <div className="flex items-center gap-2.5">
@@ -35,15 +37,15 @@ export function SiteFooter() {
               <Wordmark className="text-lg" />
             </div>
             <p className="text-muted mt-3 text-sm leading-relaxed">
-              Standings and Swiss pairings for the school chess club. One season
-              is one continuous event, and one club meeting is one round.
+              Standings and results for the PSHS Central Visayas chess club.
+              Every club meeting is a round, and every game counts.
             </p>
           </div>
 
-          <div className="flex gap-12 sm:gap-16">
+          <div className="flex flex-wrap gap-x-12 gap-y-8 sm:gap-x-16">
             <nav aria-label="Footer">
               <h2 className="label">The season</h2>
-              <ul className="mt-3 space-y-2 text-sm">
+              <ul className="mt-2 space-y-1 text-sm">
                 <li>
                   <Link href="/standings" className={LINK}>
                     Standings
@@ -51,12 +53,17 @@ export function SiteFooter() {
                 </li>
                 <li>
                   <Link href="/results" className={LINK}>
-                    Pairings &amp; results
+                    Results
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/players" className={LINK}>
+                    Players
                   </Link>
                 </li>
                 <li>
                   <Link href="/officer" className={LINK}>
-                    Officer tools
+                    Officer &amp; arbiter sign-in
                   </Link>
                 </li>
               </ul>
@@ -64,7 +71,12 @@ export function SiteFooter() {
 
             <div>
               <h2 className="label">The club</h2>
-              <ul className="mt-3 space-y-2 text-sm">
+              <ul className="mt-2 space-y-1 text-sm">
+                <li>
+                  <Link href="/about" className={LINK}>
+                    About &amp; joining
+                  </Link>
+                </li>
                 <li>
                   <Link href="/suggest" className={LINK}>
                     Suggest a feature

@@ -1,13 +1,18 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { formatMatchupScore } from "@/components/matchup-games";
-import { Pawn } from "@/components/pawn";
 import { SiteHeader } from "@/components/site-header";
-import { getActiveSeason, getRoster, getRoundMatchups, getSeasonRounds } from "@/lib/club/queries";
+import { StaffMatchList } from "@/components/staff-match-list";
+import { EmptyState, Note, PageHeader, WordingToggle } from "@/components/ui";
+import {
+  getActiveSeason,
+  getRoster,
+  getRoundMatchups,
+  getSeasonRounds,
+} from "@/lib/club/queries";
+import { getTerms } from "@/lib/club/wording";
 import { currentRole } from "@/lib/officer/session";
 
-export const metadata: Metadata = { title: "Arbiter tools" };
+export const metadata: Metadata = { title: "Report results" };
 
 /**
  * What an arbiter sees: the open round, and nothing else.
@@ -19,102 +24,81 @@ export default async function ArbiterPage() {
   const role = await currentRole();
   if (!role) redirect("/officer");
 
-  const season = await getActiveSeason();
+  const [season, roster, terms] = await Promise.all([
+    getActiveSeason(),
+    getRoster(),
+    getTerms(),
+  ]);
   const rounds = season ? await getSeasonRounds(season.id) : [];
   const openRound =
     rounds.filter((r) => r.status !== "completed").at(-1) ?? rounds.at(-1) ?? null;
-  const matchups = openRound ? await getRoundMatchups(openRound.id) : [];
-  const roster = await getRoster();
+  const matches = openRound ? await getRoundMatchups(openRound.id) : [];
   const nameById = new Map(roster.map((p) => [p.id, p.full_name]));
+
+  const games = matches.filter((m) => m.pairing.player_b_id !== null).flatMap((m) => m.games);
+  const entered = games.filter((g) => g.result !== "pending").length;
 
   return (
     <>
       <SiteHeader role={role} currentPath="/arbiter" />
 
-      <main className="mx-auto max-w-3xl px-6 py-10 sm:py-16">
-        <p className="label">Arbiter</p>
-        <h1 className="mt-3 text-3xl sm:text-4xl">Report results</h1>
+      <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
+        <PageHeader
+          eyebrow={openRound ? `Round ${openRound.round_number}` : "Arbiter"}
+          title="Report results"
+          description={
+            openRound && matches.length > 0
+              ? `Choose a ${terms.match}, then enter who had White and how each game ended.`
+              : undefined
+          }
+        />
 
-        {!openRound || matchups.length === 0 ? (
-          <div
-            className="mt-10 flex items-start gap-4 border-t pt-8"
-            style={{ borderColor: "var(--rule)" }}
-          >
-            <Pawn className="text-faint mt-0.5 h-5 w-auto shrink-0" />
-            <p className="text-muted max-w-prose text-sm leading-relaxed">
-              No round is open yet. An officer needs to start one and generate the
-              matchups before there is anything to report.
-            </p>
-          </div>
+        {!openRound || matches.length === 0 ? (
+          <EmptyState>
+            No round is ready yet. An officer needs to start one and pair the
+            players before there is anything to report. Check back once they
+            have.
+          </EmptyState>
         ) : (
           <>
-            <p className="text-muted mt-3 text-sm">
-              Round {openRound.round_number}. Open a matchup to enter its games.
-            </p>
+            <div className="card mt-6 p-4 sm:p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-medium">
+                  {entered} of {games.length} games entered
+                </p>
+                <p className="text-muted text-sm">
+                  {games.length - entered === 0
+                    ? "Everything is in. An officer can now finish the round."
+                    : `${games.length - entered} to go`}
+                </p>
+              </div>
+              <div
+                className="mt-3 h-2 overflow-hidden rounded-full"
+                style={{ backgroundColor: "var(--color-cream-deep)" }}
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={games.length}
+                aria-valuenow={entered}
+                aria-label="Games entered"
+              >
+                <div
+                  className="bg-ink h-full rounded-full"
+                  style={{ width: `${games.length ? (entered / games.length) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
 
-            <ul className="mt-8">
-              {matchups.map((view) => {
-                const outstanding = view.games.filter(
-                  (g) => g.result === "pending",
-                ).length;
-                const isBye = view.pairing.player_b_id === null;
+            <WordingToggle terms={terms} returnTo="/arbiter" className="mt-5" />
 
-                return (
-                  <li
-                    key={view.pairing.id}
-                    className="border-b"
-                    style={{ borderColor: "var(--rule)" }}
-                  >
-                    {/* Four columns on a desk. On a phone the fixed 6rem
-                        status column alone ate a fifth of the width and left
-                        two full names about 120px, so it drops to a second
-                        line under the pairing instead. */}
-                    <Link
-                      href={`/matchup/${view.pairing.id}`}
-                      className="grid grid-cols-[1.5rem_1fr_auto] items-center gap-x-4 gap-y-1 py-4 transition-colors hover:bg-cream-deep sm:grid-cols-[1.5rem_1fr_auto_6rem]"
-                    >
-                      <span
-                        className="text-faint row-span-2 self-start pt-0.5 text-sm sm:row-span-1 sm:self-center sm:pt-0"
-                        data-numeric
-                      >
-                        {view.pairing.board_number}
-                      </span>
-                      <span className="col-start-2 row-start-1 min-w-0 text-sm">
-                        {nameById.get(view.pairing.player_a_id)}
-                        {isBye ? (
-                          <span className="text-faint"> — bye</span>
-                        ) : (
-                          <>
-                            <span className="text-faint mx-2">v</span>
-                            {nameById.get(view.pairing.player_b_id!)}
-                          </>
-                        )}
-                      </span>
-                      <span className="col-start-3 row-start-1 text-sm tabular-nums whitespace-nowrap">
-                        {isBye ? (
-                          <span className="text-faint text-xs">—</span>
-                        ) : (
-                          formatMatchupScore(view)
-                        )}
-                      </span>
-                      <span className="text-faint col-start-2 row-start-2 text-xs sm:col-start-4 sm:row-start-1 sm:text-right">
-                        {isBye
-                          ? ""
-                          : outstanding === 0
-                            ? "complete"
-                            : `${outstanding} to go`}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="mt-5">
+              <StaffMatchList matches={matches} nameById={nameById} terms={terms} />
+            </div>
 
-            <p className="text-faint mt-8 max-w-prose text-xs leading-relaxed">
-              You can enter and correct results and forfeits for this round.
-              Starting rounds, pairing, the roster and closing the round are
-              officer tasks.
-            </p>
+            <Note>
+              You can enter and correct results for this round. Starting rounds,
+              pairing players, the roster and finishing the round are done by
+              officers.
+            </Note>
           </>
         )}
       </main>

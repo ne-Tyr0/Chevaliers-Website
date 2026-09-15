@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { PawnBackdrop } from "@/components/pawn-backdrop";
 import { SiteFooter } from "@/components/site-footer";
@@ -61,13 +61,24 @@ export const metadata: Metadata = {
   },
 };
 
+/*
+ * "cover" lets the phone tab bar reach the bottom edge and pad itself clear of
+ * the home indicator, instead of leaving a cream strip beneath it.
+ */
+export const viewport: Viewport = {
+  viewportFit: "cover",
+  themeColor: "#f0ece0",
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
+  // The body leaves room at the bottom on phones, so the fixed tab bar never
+  // covers the end of the page.
   return (
     <html
       lang="en"
       className={`${fraunces.variable} ${inter.variable} h-full antialiased`}
     >
-      <body className="min-h-full">
+      <body className="min-h-full pb-[calc(var(--tabbar-height)+env(safe-area-inset-bottom))] sm:pb-0">
         <PawnBackdrop />
         {children}
         <SiteFooter />
