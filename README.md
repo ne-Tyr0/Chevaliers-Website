@@ -13,10 +13,13 @@ is worth 2 to the winner and 1 to the loser.
 
 There are no accounts, just two shared passcodes.
 
-- **Everyone** — standings and results, no sign-in.
+- **Everyone** — standings and results, no sign-in. Anyone can also send a
+  feature suggestion from the footer; only officers can read them.
 - **Arbiters** — one screen: the open round's matchups, where they report game
   results and forfeits. No roster, no pairing, no past rounds.
-- **Officers** — everything: roster, seasons, pairing, closing rounds.
+- **Officers** — everything: roster, seasons, pairing, closing rounds, and a
+  Suggestions tab to triage what visitors send. Suggestions need
+  [`0008_suggestions.sql`](supabase/migrations/0008_suggestions.sql).
 
 Both cookies last 30 days per device. Changing a passcode signs everyone out of
 that role.

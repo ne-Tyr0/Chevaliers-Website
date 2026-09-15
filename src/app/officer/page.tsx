@@ -10,8 +10,10 @@ import {
   completeRound,
   createSeason,
   deleteMatchup,
+  deleteSuggestion,
   generatePairings,
   setPlayerActive,
+  setSuggestionStatus,
   startRound,
   unlockRole,
 } from "@/lib/club/actions";
@@ -22,8 +24,18 @@ import {
   getSeasonHistory,
   type MatchupView,
 } from "@/lib/club/queries";
+import {
+  countNewSuggestions,
+  getSuggestions,
+  SUGGESTION_STATUSES,
+} from "@/lib/club/suggestions";
 import { currentRole } from "@/lib/officer/session";
-import type { PlayerRow, RoundRow } from "@/lib/supabase/database.types";
+import type {
+  PlayerRow,
+  RoundRow,
+  SuggestionRow,
+  SuggestionStatus,
+} from "@/lib/supabase/database.types";
 
 export const metadata: Metadata = { title: "Officers" };
 
@@ -43,7 +55,11 @@ export default async function OfficerPage({
     );
   }
 
-  const season = await getActiveSeason();
+  const tab: OfficerTab = params.tab === "suggestions" ? "suggestions" : "round";
+  const [season, newSuggestions] = await Promise.all([
+    tab === "round" ? getActiveSeason() : null,
+    countNewSuggestions(),
+  ]);
 
   return (
     <>
@@ -51,20 +67,227 @@ export default async function OfficerPage({
 
       <main className="mx-auto max-w-5xl px-6 py-10 sm:py-16">
         <p className="label">Officers</p>
-        <h1 className="mt-3 text-3xl sm:text-4xl">Run a round</h1>
+        <h1 className="mt-3 text-3xl sm:text-4xl">
+          {tab === "round" ? "Run a round" : "Suggestions"}
+        </h1>
+
+        <OfficerTabs current={tab} newSuggestions={newSuggestions} />
 
         {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-        {season ? (
-          <SeasonPanel seasonId={season.id} seasonName={season.name} />
+        {tab === "suggestions" ? (
+          <SuggestionsPanel />
         ) : (
-          <NewSeasonForm />
-        )}
+          <>
+            {season ? (
+              <SeasonPanel seasonId={season.id} seasonName={season.name} />
+            ) : (
+              <NewSeasonForm />
+            )}
 
-        <RosterSection />
+            <RosterSection />
+          </>
+        )}
       </main>
     </>
   );
+}
+
+type OfficerTab = "round" | "suggestions";
+
+/**
+ * Switches between the officer screens. Plain links carrying `?tab=`, so each
+ * tab is its own URL: a status change lands back on the tab it came from, and
+ * the round screen stays the default the header's "Run a round" opens.
+ */
+function OfficerTabs({
+  current,
+  newSuggestions,
+}: {
+  current: OfficerTab;
+  newSuggestions: number;
+}) {
+  const tabs: { id: OfficerTab; href: string; label: string; badge?: number }[] = [
+    { id: "round", href: "/officer", label: "Run a round" },
+    {
+      id: "suggestions",
+      href: "/officer?tab=suggestions",
+      label: "Suggestions",
+      badge: newSuggestions,
+    },
+  ];
+
+  return (
+    <nav
+      aria-label="Officer tools"
+      className="mt-8 flex flex-wrap gap-x-6 border-b"
+      style={{ borderColor: "var(--rule)" }}
+    >
+      {tabs.map((item) => {
+        const active = item.id === current;
+        return (
+          <Link
+            key={item.id}
+            href={item.href}
+            aria-current={active ? "page" : undefined}
+            className={`-mb-px flex items-center gap-2 border-b py-3 text-sm transition-colors ${
+              active ? "text-ink" : "text-muted border-transparent hover:text-ink"
+            }`}
+            style={active ? { borderColor: "var(--color-ink)" } : undefined}
+          >
+            {item.label}
+            {item.badge ? (
+              <span
+                className="bg-ink text-cream min-w-5 rounded-full px-1.5 text-center text-xs leading-5 tabular-nums"
+                aria-label={`${item.badge} new`}
+              >
+                {item.badge}
+              </span>
+            ) : null}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+const STATUS_LABELS: Record<SuggestionStatus, string> = {
+  new: "New",
+  planned: "Planned",
+  done: "Done",
+  declined: "Declined",
+};
+
+async function SuggestionsPanel() {
+  const { suggestions, error } = await getSuggestions();
+  if (error) {
+    return (
+      <ErrorNote>
+        Suggestions could not be loaded ({error}). If this is a new install,
+        run supabase/migrations/0008_suggestions.sql in the Supabase SQL editor.
+      </ErrorNote>
+    );
+  }
+
+  const counts = new Map<SuggestionStatus, number>();
+  for (const suggestion of suggestions) {
+    counts.set(suggestion.status, (counts.get(suggestion.status) ?? 0) + 1);
+  }
+
+  return (
+    <section className="mt-8">
+      <p className="text-muted max-w-prose text-sm leading-relaxed">
+        Sent by visitors from the{" "}
+        <Link href="/suggest" className="underline underline-offset-2">
+          suggestion page
+        </Link>{" "}
+        in the footer, newest first. Only officers see these. Setting a status
+        clears a suggestion from the count on this tab.
+      </p>
+
+      {suggestions.length > 0 ? (
+        <p className="text-faint mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          {SUGGESTION_STATUSES.map((status) => (
+            <span key={status}>
+              {counts.get(status) ?? 0} {STATUS_LABELS[status].toLowerCase()}
+            </span>
+          ))}
+        </p>
+      ) : null}
+
+      {suggestions.length === 0 ? (
+        <Note>No suggestions yet.</Note>
+      ) : (
+        <ul className="mt-6 border-t" style={{ borderColor: "var(--rule)" }}>
+          {suggestions.map((suggestion) => (
+            <SuggestionItem key={suggestion.id} suggestion={suggestion} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function SuggestionItem({ suggestion }: { suggestion: SuggestionRow }) {
+  const settled = suggestion.status === "done" || suggestion.status === "declined";
+
+  return (
+    <li className="border-b py-5" style={{ borderColor: "var(--rule)" }}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-sm">
+          {suggestion.name ?? <span className="text-faint">Anonymous</span>}
+        </p>
+        <p className="text-faint text-xs">
+          <time dateTime={suggestion.created_at}>
+            {formatSubmitted(suggestion.created_at)}
+          </time>
+          <span className="mx-2" aria-hidden="true">
+            ·
+          </span>
+          {STATUS_LABELS[suggestion.status]}
+        </p>
+      </div>
+
+      <p
+        className={`mt-2 max-w-prose text-sm leading-relaxed break-words whitespace-pre-wrap ${
+          settled ? "text-muted" : ""
+        }`}
+      >
+        {suggestion.body}
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {SUGGESTION_STATUSES.map((status) => {
+          const current = status === suggestion.status;
+          return (
+            <form key={status} action={setSuggestionStatus}>
+              <input type="hidden" name="suggestionId" value={suggestion.id} />
+              <input type="hidden" name="status" value={status} />
+              <button
+                type="submit"
+                disabled={current}
+                aria-pressed={current}
+                className={
+                  current
+                    ? "bg-ink text-cream border px-3 py-1 text-xs"
+                    : "text-muted cursor-pointer border px-3 py-1 text-xs transition-colors hover:text-ink"
+                }
+                style={{
+                  borderColor: current ? "var(--color-ink)" : "var(--rule-strong)",
+                }}
+              >
+                {STATUS_LABELS[status]}
+              </button>
+            </form>
+          );
+        })}
+
+        <form action={deleteSuggestion} className="ml-auto">
+          <input type="hidden" name="suggestionId" value={suggestion.id} />
+          <button
+            type="submit"
+            className="text-faint cursor-pointer px-1 py-1 text-xs transition-colors hover:text-ink"
+          >
+            Delete
+          </button>
+        </form>
+      </div>
+    </li>
+  );
+}
+
+/** When a suggestion arrived, in the school's time zone. */
+function formatSubmitted(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Manila",
+  });
 }
 
 function PasscodeGate({ error }: { error: string | null }) {

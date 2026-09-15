@@ -66,6 +66,11 @@ export function SiteFooter() {
               <h2 className="label">The club</h2>
               <ul className="mt-3 space-y-2 text-sm">
                 <li>
+                  <Link href="/suggest" className={LINK}>
+                    Suggest a feature
+                  </Link>
+                </li>
+                <li>
                   <a
                     href={`mailto:${CLUB_EMAIL}`}
                     className={LINK}

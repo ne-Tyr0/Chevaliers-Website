@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   assertCanEnterResults,
@@ -12,7 +13,11 @@ import {
   signOut,
 } from "@/lib/officer/session";
 import { createAdminClient } from "@/lib/supabase/server";
-import type { DbPairingResult, DbPieceColor } from "@/lib/supabase/database.types";
+import type {
+  DbPairingResult,
+  DbPieceColor,
+  SuggestionStatus,
+} from "@/lib/supabase/database.types";
 import {
   buildPlayerStates,
   GAMES_PER_MATCHUP,
@@ -20,6 +25,11 @@ import {
   pairRound,
 } from "@/lib/swiss";
 import { getActiveSeason, getRoundForGame, getSeasonHistory } from "./queries";
+import {
+  SUGGESTION_MAX_LENGTH,
+  SUGGESTION_NAME_MAX_LENGTH,
+  SUGGESTION_STATUSES,
+} from "./suggestions";
 
 /** Upper bound for the placeholder pairing number. Wide enough that ties are rare. */
 const PAIRING_NUMBER_RANGE = 1_000_000;
@@ -582,4 +592,125 @@ export async function completeRound(formData: FormData) {
   revalidatePath("/results");
   revalidatePath("/");
   backToOfficer();
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions — anyone sends, officers triage
+// ---------------------------------------------------------------------------
+
+/** Remembers when this browser last sent a suggestion. */
+const SUGGESTED_COOKIE = "chevaliers_suggested";
+/** How long one browser waits between suggestions. */
+const SUGGESTION_COOLDOWN_MS = 60 * 1000;
+/**
+ * Most suggestions the whole site accepts in an hour. Clearing cookies gets
+ * round the per-browser wait, so this is the backstop against a flood.
+ */
+const SUGGESTIONS_PER_HOUR = 30;
+
+function backToSuggest(error: string): never {
+  redirect(`/suggest?error=${encodeURIComponent(error)}`);
+}
+
+function backToSuggestionsTab(error?: string): never {
+  redirect(
+    error
+      ? `/officer?tab=suggestions&error=${encodeURIComponent(error)}`
+      : "/officer?tab=suggestions",
+  );
+}
+
+/**
+ * The public suggestion form.
+ *
+ * The only action that runs without a passcode, so it trusts nothing: it trims
+ * and bounds both fields, and inserts a single row. Protection is deliberately
+ * light — no CAPTCHA for students to fight — and comes in three layers:
+ *
+ *   1. A honeypot field hidden from people. Bots that fill every input are told
+ *      it worked, and nothing is saved.
+ *   2. A one-minute wait per browser, held in a cookie.
+ *   3. A site-wide cap per hour, for anyone who clears the cookie.
+ */
+export async function submitSuggestion(formData: FormData) {
+  if (String(formData.get("website") ?? "") !== "") redirect("/suggest?sent=1");
+
+  const body = String(formData.get("body") ?? "").trim();
+  const nameInput = String(formData.get("name") ?? "").trim();
+  const name = nameInput === "" ? null : nameInput;
+
+  if (!body) backToSuggest("Write your suggestion before sending it.");
+  if (body.length > SUGGESTION_MAX_LENGTH) {
+    backToSuggest(
+      `Keep it under ${SUGGESTION_MAX_LENGTH} characters — that one is ${body.length}.`,
+    );
+  }
+  if (name && name.length > SUGGESTION_NAME_MAX_LENGTH) {
+    backToSuggest(`Names are limited to ${SUGGESTION_NAME_MAX_LENGTH} characters.`);
+  }
+
+  const cookieStore = await cookies();
+  const lastSent = Number(cookieStore.get(SUGGESTED_COOKIE)?.value);
+  if (Number.isFinite(lastSent) && Date.now() - lastSent < SUGGESTION_COOLDOWN_MS) {
+    backToSuggest("You just sent one. Give it a minute before sending another.");
+  }
+
+  const supabase = createAdminClient();
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count } = await supabase
+    .from("suggestions")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", hourAgo);
+  if ((count ?? 0) >= SUGGESTIONS_PER_HOUR) {
+    backToSuggest(
+      "The suggestion box is full for the moment. Please try again in an hour.",
+    );
+  }
+
+  const { error } = await supabase.from("suggestions").insert({ body, name });
+  if (error) backToSuggest("That did not send. Please try again.");
+
+  cookieStore.set(SUGGESTED_COOKIE, String(Date.now()), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: Math.ceil(SUGGESTION_COOLDOWN_MS / 1000),
+  });
+
+  revalidatePath("/officer");
+  redirect("/suggest?sent=1");
+}
+
+export async function setSuggestionStatus(formData: FormData) {
+  await assertOfficer();
+  const suggestionId = String(formData.get("suggestionId") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!suggestionId || !SUGGESTION_STATUSES.includes(status as SuggestionStatus)) {
+    backToSuggestionsTab("That status is not recognised.");
+  }
+
+  const { error } = await createAdminClient()
+    .from("suggestions")
+    .update({ status: status as SuggestionStatus })
+    .eq("id", suggestionId);
+  if (error) backToSuggestionsTab(error.message);
+
+  revalidatePath("/officer");
+  backToSuggestionsTab();
+}
+
+export async function deleteSuggestion(formData: FormData) {
+  await assertOfficer();
+  const suggestionId = String(formData.get("suggestionId") ?? "");
+  if (!suggestionId) backToSuggestionsTab("That suggestion no longer exists.");
+
+  const { error } = await createAdminClient()
+    .from("suggestions")
+    .delete()
+    .eq("id", suggestionId);
+  if (error) backToSuggestionsTab(error.message);
+
+  revalidatePath("/officer");
+  backToSuggestionsTab();
 }

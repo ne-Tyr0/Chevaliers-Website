@@ -23,6 +23,7 @@ export type DbPairingResult =
   | "a_forfeit_win"
   | "b_forfeit_win"
   | "double_forfeit";
+export type SuggestionStatus = "new" | "planned" | "done" | "declined";
 
 export type PlayerRow = {
   id: string;
@@ -73,6 +74,16 @@ export type GameRow = {
   result: DbPairingResult;
   updated_by: string | null;
   updated_at: string;
+  created_at: string;
+};
+
+/** A feature suggestion from a visitor. Readable by officers only. */
+export type SuggestionRow = {
+  id: string;
+  body: string;
+  /** Null when the sender stayed anonymous. */
+  name: string | null;
+  status: SuggestionStatus;
   created_at: string;
 };
 
@@ -201,6 +212,24 @@ export type Database = {
           },
         ];
       };
+      suggestions: {
+        Row: SuggestionRow;
+        Insert: {
+          id?: string;
+          body: string;
+          name?: string | null;
+          status?: SuggestionStatus;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          body?: string;
+          name?: string | null;
+          status?: SuggestionStatus;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -213,6 +242,7 @@ export type Database = {
       round_status: RoundStatus;
       piece_color: DbPieceColor;
       pairing_result: DbPairingResult;
+      suggestion_status: SuggestionStatus;
     };
     CompositeTypes: {
       [_ in never]: never;
