@@ -86,6 +86,17 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${fraunces.variable} ${inter.variable} h-full antialiased`}
     >
       <body className="min-h-full pb-[calc(var(--tabbar-height)+env(safe-area-inset-bottom))] sm:pb-0">
+        {/*
+          Marks slower devices before anything paints, so the heavier motion —
+          page transitions, staggered cards, the chess touches — never starts
+          on a phone or school PC that would struggle with it. Runs inline
+          rather than in a component so the mark is set before the first frame.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var n=navigator,c=n.connection||{},slow=(n.deviceMemory&&n.deviceMemory<=4)||(n.hardwareConcurrency&&n.hardwareConcurrency<=4)||c.saveData||/(^|-)2g$/.test(c.effectiveType||"");if(slow){document.documentElement.dataset.motion="lite"}}catch(e){}`,
+          }}
+        />
         <PawnBackdrop />
         <SiteHeader role={role} />
         {children}

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { ChevronDown } from "@/components/icons";
+import { CardsSkeleton } from "@/components/skeletons";
 import { PlayersTabs } from "@/components/players-tabs";
 import { EmptyState, ErrorNote, PageHeader, SectionHeading } from "@/components/ui";
 import {
@@ -22,7 +24,22 @@ export const metadata: Metadata = { title: "Officers & adviser" };
  * year, so the page never goes blank in June just because the new officers
  * have not been added yet.
  */
-export default async function OfficersPage() {
+export default function OfficersPage() {
+  return (
+    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
+      <PageHeader
+        title="Players"
+        description="The people who run the club, and who to talk to about joining or anything else."
+      />
+      <PlayersTabs current="officers" />
+      <Suspense fallback={<CardsSkeleton />}>
+        <OfficersBody />
+      </Suspense>
+    </main>
+  );
+}
+
+async function OfficersBody() {
   const [{ years, error }, roster, role] = await Promise.all([
     getOfficerYears(),
     getRoster(),
@@ -33,12 +50,7 @@ export default async function OfficersPage() {
   const calendarYear = schoolYearOf(new Date());
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
-      <PageHeader
-        title="Players"
-        description="The people who run the club, and who to talk to about joining or anything else."
-      />
-      <PlayersTabs current="officers" />
+    <>
 
       {error ? (
         <ErrorNote>
@@ -118,7 +130,7 @@ export default async function OfficersPage() {
           ) : null}
         </>
       )}
-    </main>
+    </>
   );
 }
 

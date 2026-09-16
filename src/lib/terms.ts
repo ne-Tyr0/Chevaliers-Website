@@ -53,7 +53,6 @@ export interface Terms {
   record: string;
   /** Games decided without being played. */
   forfeits: (count: number) => string;
-  resultsTitle: string;
   /** One player's outcome in one game, lower case: "won", "free round". */
   outcome: (outcome: PlayerOutcome) => string;
   /** A game's result as the results page shows it. */
@@ -113,7 +112,6 @@ const PLAIN: Terms = {
     "Like opponents' strength, but each opponent counts in proportion to the games this player won against them, with draws as half.",
   record: "Won · Drawn · Lost",
   forfeits: (n) => plural(n, "game not played", "games not played"),
-  resultsTitle: "Results",
   outcome: (o) => PLAIN_OUTCOME[o],
   gameResult: (result, a, b) => {
     switch (result) {
@@ -153,7 +151,6 @@ const CHESS: Terms = {
     "Opponents' scores, weighted by the share of each matchup won against them.",
   record: "W–D–L",
   forfeits: (n) => plural(n, "forfeit", "forfeits"),
-  resultsTitle: "Pairings & results",
   outcome: (o) => CHESS_OUTCOME[o],
   gameResult: (result) => CHESS_RESULT[result],
 };
