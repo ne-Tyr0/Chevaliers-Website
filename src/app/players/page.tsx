@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { ChevronRight, SearchIcon } from "@/components/icons";
+import { ListSkeleton } from "@/components/skeletons";
 import { PlayersTabs } from "@/components/players-tabs";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { getRoster } from "@/lib/club/queries";
@@ -27,29 +29,11 @@ function fold(value: string): string {
  * link.
  */
 export default async function PlayersPage({ searchParams }: PageProps<"/players">) {
+  // Only the query string is read here, so the page frame — heading, tabs and
+  // the search box — goes out without waiting for the database. The list
+  // itself streams in behind it.
   const params = await searchParams;
   const query = typeof params.q === "string" ? params.q.trim() : "";
-
-  const [snapshot, roster, terms] = await Promise.all([
-    getSeasonSnapshot(),
-    getRoster(),
-    getTerms(),
-  ]);
-
-  // Everyone active, plus anyone retired who still has games this season.
-  const players = roster.filter(
-    (p) => p.is_active || snapshot?.rowById.has(p.id),
-  );
-
-  const needle = fold(query);
-  const matches = needle
-    ? players.filter((p) =>
-        [p.full_name, shortName(p.full_name), p.grade ?? ""].some((field) =>
-          fold(field).includes(needle),
-        ),
-      )
-    : players;
-  const ordered = [...matches].sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   return (
     <>
@@ -81,6 +65,37 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
           </button>
         </form>
 
+        <Suspense fallback={<ListSkeleton />}>
+          <PlayersList query={query} />
+        </Suspense>
+      </main>
+    </>
+  );
+}
+
+/** The roster itself, which needs the season to show each player's place. */
+async function PlayersList({ query }: { query: string }) {
+  const [snapshot, roster, terms] = await Promise.all([
+    getSeasonSnapshot(),
+    getRoster(),
+    getTerms(),
+  ]);
+
+  // Everyone active, plus anyone retired who still has games this season.
+  const players = roster.filter((p) => p.is_active || snapshot?.rowById.has(p.id));
+
+  const needle = fold(query);
+  const matches = needle
+    ? players.filter((p) =>
+        [p.full_name, shortName(p.full_name), p.grade ?? ""].some((field) =>
+          fold(field).includes(needle),
+        ),
+      )
+    : players;
+  const ordered = [...matches].sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+  return (
+    <>
         {query ? (
           <p className="text-muted mt-4 flex flex-wrap items-center gap-x-3 text-sm" aria-live="polite">
             {ordered.length === 0
@@ -132,7 +147,6 @@ export default async function PlayersPage({ searchParams }: PageProps<"/players"
             })}
           </ul>
         ) : null}
-      </main>
     </>
   );
 }

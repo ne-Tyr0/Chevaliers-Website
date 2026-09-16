@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import type { PlayerRow } from "@/lib/supabase/database.types";
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { MatchCard } from "@/components/match-card";
+import { MatchCardsSkeleton, StatTilesSkeleton } from "@/components/skeletons";
 import {
   CountUp,
   EmptyState,
@@ -36,20 +39,66 @@ export default async function PlayerPage({
   params,
 }: PageProps<"/players/[playerId]">) {
   const { playerId } = await params;
-  const [snapshot, roster, terms, { years }] = await Promise.all([
-    getSeasonSnapshot(),
-    getRoster(),
-    getTerms(),
-    getOfficerYears(),
-  ]);
-
-  const player = roster.find((p) => p.id === playerId);
+  // The roster alone names the page, and it is one quick query; the season,
+  // which is the heavy part, streams in underneath.
+  const player = (await getRoster()).find((p) => p.id === playerId);
   if (!player) notFound();
 
-  // Positions held in the most recent school year entered, if any.
+  return (
+    <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
+      <PageHeader
+        crumbs={[{ href: "/players", label: "Players" }]}
+        eyebrow={
+          [player.grade, player.is_active ? null : "No longer playing"]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
+        title={player.full_name}
+      />
+      <Suspense fallback={null}>
+        <PlayerPositions player={player} />
+      </Suspense>
+      <Suspense
+        fallback={
+          <>
+            <StatTilesSkeleton />
+            <MatchCardsSkeleton count={2} />
+          </>
+        }
+      >
+        <PlayerSeason player={player} />
+      </Suspense>
+    </main>
+  );
+}
+
+/** Any club position this player holds, in the most recent year entered. */
+async function PlayerPositions({ player }: { player: PlayerRow }) {
+  const { years } = await getOfficerYears();
   const latestYear = years[0];
   const positions =
     latestYear?.officers.filter((officer) => officer.player_id === player.id) ?? [];
+  if (positions.length === 0 || !latestYear) return null;
+
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-2">
+      {positions.map((officer) => (
+        <span key={officer.id} className="tag tag-strong">
+          {officer.position}, {formatSchoolYear(latestYear.schoolYear)}
+        </span>
+      ))}
+      <Link
+        href="/players/officers"
+        className="link inline-flex min-h-9 items-center text-sm"
+      >
+        All officers
+      </Link>
+    </p>
+  );
+}
+
+async function PlayerSeason({ player }: { player: PlayerRow }) {
+  const [snapshot, terms] = await Promise.all([getSeasonSnapshot(), getTerms()]);
 
   const row = snapshot?.rowById.get(player.id) ?? null;
   const games = snapshot?.gamesByPlayer.get(player.id) ?? [];
@@ -78,30 +127,7 @@ export default async function PlayerPage({
 
   return (
     <>
-      <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-14">
-        <PageHeader
-          crumbs={[{ href: "/players", label: "Players" }]}
-          eyebrow={
-            [player.grade, player.is_active ? null : "No longer playing"]
-              .filter(Boolean)
-              .join(" · ") || undefined
-          }
-          title={player.full_name}
-        />
-        {positions.length > 0 && latestYear ? (
-          <p className="mt-3 flex flex-wrap items-center gap-2">
-            {positions.map((officer) => (
-              <span key={officer.id} className="tag tag-strong">
-                {officer.position}, {formatSchoolYear(latestYear.schoolYear)}
-              </span>
-            ))}
-            <Link href="/players/officers" className="link inline-flex min-h-9 items-center text-sm">
-              All officers
-            </Link>
-          </p>
-        ) : null}
-
-        {!row ? (
+      {!row ? (
           <EmptyState action={<MoreLink href="/players">Back to all players</MoreLink>}>
             {player.full_name} has not played this season yet. Their games will
             show here after their first round.
@@ -199,9 +225,8 @@ export default async function PlayerPage({
                 ))}
               </div>
             </section>
-          </>
-        )}
-      </main>
+        </>
+      )}
     </>
   );
 }

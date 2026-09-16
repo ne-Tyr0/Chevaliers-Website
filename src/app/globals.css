@@ -690,3 +690,37 @@
     }
   }
 }
+
+/* ---- Slower devices ------------------------------------------------------
+ *
+ * An entry-level phone, an old school PC or a connection on 2G gets the cheap
+ * half of the motion: presses, hovers and fades, which are a compositor's
+ * work and cost almost nothing. Everything that moves layout around, runs for
+ * a second, or animates forever is dropped. The mark is set by a small inline
+ * script in the layout before the first frame.
+ */
+:root[data-motion="lite"] .reveal,
+:root[data-motion="lite"] .pawn-glide-left,
+:root[data-motion="lite"] .pawn-glide-right,
+:root[data-motion="lite"] .count-up,
+:root[data-motion="lite"] .step-knight,
+:root[data-motion="lite"] .leader-mark .leader-pawn,
+:root[data-motion="lite"] .leader-mark .leader-queen,
+:root[data-motion="lite"] .skeleton::after,
+:root[data-motion="lite"] details[open] > :not(summary) {
+  animation: none !important;
+}
+
+/* The shimmer is the only thing on the site that loops, so it goes first. */
+:root[data-motion="lite"] .skeleton::after {
+  content: none;
+}
+
+/* Page transitions move the whole screen, which is the most expensive of the
+   lot and the least missed. */
+:root[data-motion="lite"]::view-transition-group(*),
+:root[data-motion="lite"]::view-transition-old(*),
+:root[data-motion="lite"]::view-transition-new(*) {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}

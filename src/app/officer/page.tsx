@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { StepKnight } from "@/components/chess-motion";
 import { CheckIcon, ChevronDown, ChevronRight, LockIcon } from "@/components/icons";
 import { Pawn } from "@/components/pawn";
+import { ListSkeleton } from "@/components/skeletons";
 import { StaffMatchList } from "@/components/staff-match-list";
 import {
   EmptyState,
@@ -103,18 +105,26 @@ export default async function OfficerPage({
   }
 
   const tab = parseTab(params.tab);
-  const newSuggestions = await countNewSuggestions();
 
+  // The tabs go out immediately and each panel streams in behind them, so
+  // moving between tabs never waits on the database.
   return (
-    <>
-      <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
-        <PageHeader title="Officer tools" />
+    <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-14">
+      <PageHeader title="Officer tools" />
 
-        <OfficerTabs current={tab} newSuggestions={newSuggestions} />
+      <OfficerTabs
+        current={tab}
+        badge={
+          <Suspense fallback={null}>
+            <SuggestionsBadge />
+          </Suspense>
+        }
+      />
 
-        {error ? <ErrorNote>{error}</ErrorNote> : null}
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-        <div className="mt-8">
+      <div className="mt-8">
+        <Suspense fallback={<ListSkeleton rows={4} />}>
           {tab === "round" ? <RoundPanel /> : null}
           {tab === "rounds" ? <RoundsPanel /> : null}
           {tab === "roster" ? <RosterPanel /> : null}
@@ -125,9 +135,23 @@ export default async function OfficerPage({
           ) : null}
           {tab === "suggestions" ? <SuggestionsPanel /> : null}
           {tab === "settings" ? <SettingsPanel saved={params.saved === "1"} /> : null}
-        </div>
-      </main>
-    </>
+        </Suspense>
+      </div>
+    </main>
+  );
+}
+
+/** How many suggestions nobody has triaged, once that count arrives. */
+async function SuggestionsBadge() {
+  const count = await countNewSuggestions();
+  if (!count) return null;
+  return (
+    <span
+      className="bg-ink text-cream min-w-5 rounded-full px-1.5 text-center text-xs leading-5 tabular-nums"
+      aria-label={`${count} new`}
+    >
+      {count}
+    </span>
   );
 }
 
@@ -210,10 +234,11 @@ function PasscodeGate({
  */
 function OfficerTabs({
   current,
-  newSuggestions,
+  badge,
 }: {
   current: OfficerTab;
-  newSuggestions: number;
+  /** The Suggestions count, which arrives after the tabs themselves. */
+  badge: React.ReactNode;
 }) {
   return (
     <nav
@@ -224,7 +249,6 @@ function OfficerTabs({
       <ul className="-ml-3 flex flex-wrap gap-x-1">
         {TABS.map((item) => {
           const active = item.id === current;
-          const badge = item.id === "suggestions" ? newSuggestions : 0;
           return (
             <li key={item.id}>
               <Link
@@ -237,14 +261,7 @@ function OfficerTabs({
                 }`}
               >
                 {item.label}
-                {badge ? (
-                  <span
-                    className="bg-ink text-cream min-w-5 rounded-full px-1.5 text-center text-xs leading-5 tabular-nums"
-                    aria-label={`${badge} new`}
-                  >
-                    {badge}
-                  </span>
-                ) : null}
+                {item.id === "suggestions" ? badge : null}
                 {active ? (
                   <span aria-hidden className="bg-ink absolute inset-x-2 bottom-0 h-[3px] rounded-t" />
                 ) : null}

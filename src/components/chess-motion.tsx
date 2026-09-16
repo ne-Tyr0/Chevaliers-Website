@@ -9,11 +9,14 @@ import { Knight, Pawn, Queen } from "./pawn";
  * them ("1st", "Step 2 of 4") carries the meaning.
  */
 
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
+/**
+ * Whether to sit still: either the device asks for reduced motion, or the
+ * layout marked it as one of the slower ones (see globals.css).
+ */
+function skipMotion(): boolean {
+  if (typeof window === "undefined") return true;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return true;
+  return document.documentElement.dataset.motion === "lite";
 }
 
 function readSession(key: string): string | null {
@@ -52,7 +55,7 @@ export function LeaderMark({ className = "" }: { className?: string }) {
   useLayoutEffect(() => {
     const mark = ref.current;
     if (!mark) return;
-    if (prefersReducedMotion() || readSession(PROMOTED_KEY)) {
+    if (skipMotion() || readSession(PROMOTED_KEY)) {
       mark.dataset.state = "queen";
       return;
     }
@@ -99,7 +102,7 @@ export function StepKnight({
     const stored = readSession(storageKey);
     writeSession(storageKey, String(step));
     // Nothing stored means this is the first look at this round: stand still.
-    if (!knight || stored === null || prefersReducedMotion()) return;
+    if (!knight || stored === null || skipMotion()) return;
 
     const previous = Number(stored);
     if (!Number.isInteger(previous) || previous < 0 || previous >= step) return;
