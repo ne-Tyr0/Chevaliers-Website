@@ -201,7 +201,15 @@ export type Database = {
           is_rematch?: boolean;
           created_at?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "pairings_round_id_fkey";
+            columns: ["round_id"];
+            isOneToOne: false;
+            referencedRelation: "rounds";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       games: {
         Row: GameRow;

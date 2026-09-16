@@ -16,27 +16,57 @@ export interface MatchupView {
 }
 
 /**
- * The active season and its rounds, in a single round trip.
+ * The whole active season — its rounds, their matchups and every game — in one
+ * request.
  *
- * Every page needs both, and each Supabase call costs roughly a quarter of a
- * second from here, so fetching them separately doubled the wait for nothing.
- * Cached per request, so asking for either costs one call in total.
+ * This used to be two requests that had to run one after the other: the season
+ * with its rounds, then the matchups for those rounds. The database is in
+ * Singapore and the pages render on Vercel, so every request is a round trip
+ * measured in hundreds of milliseconds and the second one could not start
+ * until the first came back. Asking Postgres to nest the whole lot costs one
+ * trip instead, and the rows are the same rows.
+ *
+ * Cached per request, so a page that wants the season, the rounds and the
+ * matchups pays for one call between them.
  */
 const getSeasonBundle = cache(
-  async (): Promise<{ season: SeasonRow | null; rounds: RoundRow[] }> => {
+  async (): Promise<{
+    season: SeasonRow | null;
+    rounds: RoundRow[];
+    matchupViews: MatchupView[];
+  }> => {
     const supabase = createPublicClient();
     const { data } = await supabase
       .from("seasons")
-      .select("*, rounds(*)")
+      .select("*, rounds(*, pairings(*, games(*)))")
       .eq("status", "active")
       .maybeSingle();
 
-    if (!data) return { season: null, rounds: [] };
+    if (!data) return { season: null, rounds: [], matchupViews: [] };
     const { rounds, ...season } = data;
-    return {
-      season,
-      rounds: [...rounds].sort((a, b) => a.round_number - b.round_number),
-    };
+
+    // The rounds without their nested matchups, which travel separately.
+    const sortedRounds: RoundRow[] = rounds
+      .map((round) => ({
+        id: round.id,
+        season_id: round.season_id,
+        round_number: round.round_number,
+        played_on: round.played_on,
+        status: round.status,
+        tracks_colors: round.tracks_colors,
+        created_at: round.created_at,
+      }))
+      .sort((a, b) => a.round_number - b.round_number);
+    const roundNumberById = new Map(sortedRounds.map((r) => [r.id, r.round_number]));
+
+    const matchupViews = toViews(rounds.flatMap((round) => round.pairings)).sort(
+      (a, b) =>
+        (roundNumberById.get(a.pairing.round_id) ?? 0) -
+          (roundNumberById.get(b.pairing.round_id) ?? 0) ||
+        a.pairing.board_number - b.pairing.board_number,
+    );
+
+    return { season, rounds: sortedRounds, matchupViews };
   },
 );
 
@@ -101,7 +131,7 @@ function toViews(
  */
 export const getSeasonHistory = cache(
   async (seasonId: string): Promise<SeasonHistory> => {
-    const supabase = createPublicClient();
+    const bundle = await getSeasonBundle();
     const rounds = await getSeasonRounds(seasonId);
     const roundNumberById = new Map(rounds.map((r) => [r.id, r.round_number]));
 
@@ -109,20 +139,27 @@ export const getSeasonHistory = cache(
       return { rounds, matchupViews: [], matchups: [], roundNumberById };
     }
 
-    const { data } = await supabase
-      .from("pairings")
-      .select(PAIRING_WITH_GAMES)
-      .in(
-        "round_id",
-        rounds.map((r) => r.id),
-      );
-
-    const matchupViews = toViews(data ?? []).sort(
-      (a, b) =>
-        (roundNumberById.get(a.pairing.round_id) ?? 0) -
-          (roundNumberById.get(b.pairing.round_id) ?? 0) ||
-        a.pairing.board_number - b.pairing.board_number,
-    );
+    // The active season came back whole with the bundle; anything older pays
+    // for its own request, which is rare enough not to matter.
+    const matchupViews =
+      bundle.season?.id === seasonId
+        ? bundle.matchupViews
+        : toViews(
+            (
+              await createPublicClient()
+                .from("pairings")
+                .select(PAIRING_WITH_GAMES)
+                .in(
+                  "round_id",
+                  rounds.map((r) => r.id),
+                )
+            ).data ?? [],
+          ).sort(
+            (a, b) =>
+              (roundNumberById.get(a.pairing.round_id) ?? 0) -
+                (roundNumberById.get(b.pairing.round_id) ?? 0) ||
+              a.pairing.board_number - b.pairing.board_number,
+          );
 
     return {
       rounds,
