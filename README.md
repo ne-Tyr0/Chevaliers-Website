@@ -219,6 +219,26 @@ message or contact is shown publicly on each card.
 The public page shows the newest school year that has anyone entered, so it
 does not go blank at the start of a year before the new officers are added.
 
+## Speed
+
+Nothing is cached: every page reads the database live, so what people see is
+never behind. That makes two things matter.
+
+**Where the pages render.** The database is in Singapore, and Vercel was
+running the functions in Washington DC, so every query crossed the Pacific and
+came back — pages took between one and seventeen seconds to start arriving.
+[`vercel.json`](vercel.json) pins rendering to `sin1`, beside the database and
+near the club. If the database is ever moved, change that too. After a deploy,
+`x-vercel-id` in the response headers says which region answered.
+
+**How many trips each page makes.** A whole season — rounds, matchups and
+games — comes back from one nested query rather than a chain of them, so a page
+is two requests in parallel rather than three in sequence.
+
+Pages then stream: the frame goes out first and the data follows, so a tab
+opens the moment it is tapped. Each route has a `loading.tsx` shaped like the
+page it stands in for, which is also what Next prefetches for a link.
+
 ## Motion
 
 Animations are short and only answer something: a press, a page arriving,
@@ -231,6 +251,12 @@ longer than about half a second to load.
 Everything moving is inside `prefers-reduced-motion: no-preference` in
 [`src/app/globals.css`](src/app/globals.css), so anyone whose device asks for
 reduced motion sees none of it.
+
+Slower devices get the same treatment without being asked. A small inline
+script in the layout marks anything reporting low memory, few cores, data saver
+or 2G, and those devices keep only presses, hovers and fades — the page
+transitions, staggered cards, counting numbers, chess touches and the looping
+shimmer are all dropped.
 
 ## Colours are per round
 

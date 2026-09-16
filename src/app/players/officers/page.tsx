@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ChevronDown } from "@/components/icons";
-import { CardsSkeleton } from "@/components/skeletons";
 import { PlayersTabs } from "@/components/players-tabs";
+import { CardsSkeleton } from "@/components/skeletons";
 import { EmptyState, ErrorNote, PageHeader, SectionHeading } from "@/components/ui";
 import {
   formatSchoolYear,
@@ -51,7 +51,6 @@ async function OfficersBody() {
 
   return (
     <>
-
       {error ? (
         <ErrorNote>
           The officers list could not be loaded. If this is a new install, run
