@@ -12,8 +12,8 @@ export const CLUB_INFO = {
     "Chevaliers is the chess club of Philippine Science High School – Central Visayas Campus. Every club meeting is a round, everyone on the roster is paired, and this site keeps the standings as the season goes.",
 
   meetings: [
-    { label: "When", value: "[Meeting day and time, e.g. Fridays, 3:30–5:00 pm]" },
-    { label: "Where", value: "[Room or venue]" },
+    { label: "When", value: "Fridays, 9:00–11:00 am" },
+    { label: "Where", value: "Amethyst Room" },
   ],
 
   /** Steps shown under "How to join". */
